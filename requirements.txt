@@ -1,49 +1,54 @@
-# AI/ML Core
-chromadb==0.4.15
-sentence-transformers==2.2.2
-ollama==0.6.1
-torch==2.9.1
-transformers==4.57.5
+# Core Dependencies
+fastapi==0.104.1
+uvicorn==0.24.0
+pydantic==2.5.0
 
-# GUI & UI
-customtkinter==5.2.2
-streamlit==1.52.2
+# Vector Database
+chromadb==0.4.15
+
+# AI/ML
+sentence-transformers==2.2.2
+ollama==0.1.2
+transformers==4.36.0
+torch==2.1.0
+accelerate==0.25.0
 
 # Document Processing
 pypdf2==3.0.1
-pdfplumber==0.11.9
+pdfplumber==0.10.3
 python-docx==0.8.11
-ebooklib==0.20
-beautifulsoup4==4.14.3
-pytesseract==0.3.13
-Pillow==12.1.0
+ebooklib==0.18
+beautifulsoup4==4.12.2
+lxml==4.9.3
+pandas==2.1.4
+pytesseract==0.3.10
+Pillow==10.1.0
+markdown==3.5.1
 
-# Web & API
-fastapi==0.128.0
-uvicorn[standard]==0.40.0
+# Database
+sqlalchemy==2.0.23
+alembic==1.12.1
 
-# Data Processing
-pandas==2.3.3
-numpy==2.4.1
-scikit-learn==1.8.0
-scipy==1.17.0
+# GUI
+customtkinter==5.1.0
+tkinterweb==3.11.0
+
+# Web Interface (Optional)
+streamlit==1.28.0
 
 # Utilities
-pyyaml==6.0.3
-python-dotenv==1.2.1
-tqdm==4.67.1
-click==8.3.1
-colorama==0.4.6
+pyyaml==6.0
+python-dotenv==1.0.0
+structlog==23.1.0
+chardet==5.2.0
+tqdm==4.66.1
+click==8.1.7
+rich==13.7.0
 
-# Database & Storage
-duckdb==1.4.3
-lz4==4.4.5
-zstandard==0.25.0
-
-# Testing (optional)
-pytest==8.3.4
-pytest-cov==5.0.0
-
-# Development (optional)
-black==24.10.0
-flake8==7.2.0
+# Development
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+black==23.11.0
+flake8==6.1.0
+mypy==1.7.0

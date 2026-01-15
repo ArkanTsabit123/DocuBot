@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "docubot"
+version = "1.0.0"
+description = "Local AI Personal Knowledge Assistant"
+readme = "README.md"
+authors = [{name = "Your Name", email = "your.email@example.com"}]
+license = {text = "MIT"}
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: End Users/Desktop",
+    "Topic :: Office/Business",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+keywords = ["ai", "rag", "knowledge-management", "local-ai", "document-processing"]
+dependencies = [
+    "fastapi>=0.104.0",
+    "chromadb>=0.4.15",
+    "sentence-transformers>=2.2.0",
+    "ollama>=0.1.0",
+    "customtkinter>=5.1.0",
+    "pypdf2>=3.0.0",
+    "python-docx>=0.8.10",
+    "sqlalchemy>=2.0.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "mypy>=1.0.0",
+]
+web = ["streamlit>=1.28.0"]
+ocr = ["pytesseract>=0.3.10", "Pillow>=10.0.0"]
+
+[project.urls]
+Homepage = "https://github.com/yourusername/docubot"
+Documentation = "https://github.com/yourusername/docubot#readme"
+Repository = "https://github.com/yourusername/docubot"
+Issues = "https://github.com/yourusername/docubot/issues"
+
+[project.scripts]
+docubot = "app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["*"]
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
