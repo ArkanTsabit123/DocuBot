@@ -1,0 +1,215 @@
+# ============================================
+# DOCUBOT GITIGNORE CONFIGURATION
+# ============================================
+
+# Python compilation artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# Development environment configurations
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.orig
+*.bak
+
+# ============================================
+# DOCUBOT SPECIFIC EXCLUSIONS
+# ============================================
+
+# User-specific configuration overrides
+data/config/*.local.yaml
+data/config/*.local.json
+data/config/user_settings.yaml
+data/config/local_*.yaml
+data/config/local_*.json
+
+# Database storage (user-generated content)
+data/database/chroma/
+data/database/*.db
+data/database/*.sqlite
+data/database/*.sqlite3
+data/database/cache.db
+
+# Application logs
+data/logs/*.log
+
+# Document processing directories
+data/documents/uploads/
+data/documents/processed/
+data/documents/thumbnails/
+data/documents/exports/
+
+# Machine learning model storage
+data/models/
+models/
+
+# Vector database storage
+chroma.sqlite3
+chroma/
+
+# System caches
+.cache/
+*.cache
+
+# Temporary working files
+tmp/
+temp/
+*.tmp
+*.temp
+
+# ============================================
+# OPERATING SYSTEM ARTIFACTS
+# ============================================
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+Icon?
+ehthumbs.db
+Thumbs.db
+
+# ============================================
+# BUILD AND DISTRIBUTION OUTPUTS
+# ============================================
+bin/
+dist/
+build/
+*.exe
+*.msi
+*.dmg
+*.App
+*.app
+AppImage/
+*.deb
+*.rpm
+*.snap
+*.zip
+*.tar.gz
+*.whl
+
+# PyInstaller build artifacts
+*.spec
+.hook-*.py
+
+# ============================================
+# SENSITIVE CONFIGURATION DATA
+# ============================================
+.env
+.env.local
+.env.*.local
+.secrets/
+
+# ============================================
+# DATABASE FILES
+# ============================================
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+
+# ============================================
+# MACHINE LEARNING MODEL FILES
+# ============================================
+*.bin
+*.pth
+*.pt
+*.h5
+*.onnx
+*.gguf
+*.safetensors
+
+# ============================================
+# WEB DEVELOPMENT ARTIFACTS
+# ============================================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ============================================
+# APPLICATION FRAMEWORK ARTIFACTS
+# ============================================
+.streamlit/
+.ollama/
+ollama_models/
+
+# ============================================
+# DOCUMENTATION BUILD OUTPUTS
+# ============================================
+docs/_build/
+docs/build/
+site/
+
+# ============================================
+# INTERACTIVE NOTEBOOKS
+# ============================================
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ============================================
+# DEPENDENCY MANAGEMENT
+# ============================================
+Pipfile.lock
+poetry.lock
+.python-version
+
+# ============================================
+# REQUIRED TRACKED FILES
+# ============================================
+# Template and example configurations
+!data/config/app_config.yaml
+!data/config/llm_config.yaml
+!data/config/ui_config.yaml
+!data/config/shortcuts.json
+!data/config/example_config.yaml
+
+# Documentation files
+!data/models/README.md
+!models/README.md

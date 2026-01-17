@@ -1,19 +1,26 @@
-# Core Dependencies
+# ============================================
+# DOCUBOT - PYTHON 3.13 COMPATIBLE
+# ============================================
+
+# CORE FRAMEWORK
 fastapi==0.104.1
-uvicorn==0.24.0
-pydantic==2.5.0
+uvicorn[standard]==0.24.0
+pydantic==2.5.3
 
-# Vector Database
-chromadb==0.4.15
-
-# AI/ML
+# AI & MACHINE LEARNING
 sentence-transformers==2.2.2
-ollama==0.1.2
 transformers==4.36.0
-torch==2.1.0
+torch==2.1.2
 accelerate==0.25.0
+numpy==1.24.3
+scipy==1.11.4
+scikit-learn==1.3.2
 
-# Document Processing
+# VECTOR DATABASE
+chromadb==0.4.15
+hnswlib==0.7.0
+
+# DOCUMENT PROCESSING
 pypdf2==3.0.1
 pdfplumber==0.10.3
 python-docx==0.8.11
@@ -25,30 +32,28 @@ pytesseract==0.3.10
 Pillow==10.1.0
 markdown==3.5.1
 
-# Database
-sqlalchemy==2.0.23
-alembic==1.12.1
+# DATABASE - USE 1.4 FOR PYTHON 3.13 COMPATIBILITY
+sqlalchemy==1.4.51
+alembic==1.13.1
 
-# GUI
+# DESKTOP GUI
 customtkinter==5.1.0
 tkinterweb==3.11.0
 
-# Web Interface (Optional)
-streamlit==1.28.0
-
-# Utilities
-pyyaml==6.0
+# UTILITIES
+pyyaml==6.0.1
 python-dotenv==1.0.0
-structlog==23.1.0
+structlog==23.2.0
 chardet==5.2.0
 tqdm==4.66.1
 click==8.1.7
 rich==13.7.0
+requests==2.31.0
+aiohttp==3.9.1
+watchdog==3.0.0
+cachetools==5.3.2
+orjson==3.9.10
 
-# Development
-pytest==7.4.3
-pytest-asyncio==0.21.1
-pytest-cov==4.1.0
-black==23.11.0
-flake8==6.1.0
-mypy==1.7.0
+# OPTIONAL
+ollama==0.6.1
+streamlit==1.28.0

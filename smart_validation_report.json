@@ -1,0 +1,167 @@
+{
+  "timestamp": "2026-01-17T22:22:40.971386",
+  "project_path": "C:\\Users\\aarka\\Github\\project portofolio\\junior project\\DocuBot v.1\\DocuBot",
+  "project_name": "DocuBot",
+  "results": {
+    "P1.1.1 - Setup complete project structure": {
+      "score": 0.8461538461538461,
+      "details": {
+        "directories_found": 7.0,
+        "total_directories": 7,
+        "files_found": 4.0,
+        "total_files": 6,
+        "directory_details": [
+          "src: ✓",
+          "data: ✓",
+          "tests: ✓",
+          "docs: ✓",
+          "scripts: ✓",
+          "resources: ✓",
+          "bin: ✓"
+        ],
+        "file_details": [
+          "app.py: ✓",
+          "requirements.txt: ✓",
+          "README.md: ✓",
+          "LICENSE: ∅",
+          "pyproject.toml: ✓",
+          ".gitignore: ∅"
+        ]
+      }
+    },
+    "P1.1.4 - Initialize Git repository": {
+      "score": 1.0,
+      "details": {
+        "git_dir_exists": true,
+        "git_items_score": 1.0,
+        "has_commits": true,
+        "git_item_details": [
+          "HEAD: ✓",
+          "config: ✓",
+          "objects: ✓",
+          "refs: ✓"
+        ]
+      }
+    },
+    "P1.2.2 - Create app_config.yaml with all settings": {
+      "score": 1.0,
+      "details": {
+        "file_exists": true,
+        "sections_found": 8,
+        "total_sections": 8,
+        "yaml_valid": true,
+        "file_size": 1730,
+        "section_details": [
+          "App configuration: ✓",
+          "Path configurations: ✓",
+          "Document processing: ✓",
+          "AI settings: ✓",
+          "UI settings: ✓",
+          "Storage settings: ✓",
+          "Performance settings: ✓",
+          "Privacy settings: ✓"
+        ],
+        "key_details": [
+          "app: ✓",
+          "ai: ✓",
+          "paths: ✓"
+        ]
+      }
+    },
+    "P1.2.3 - Setup cross-platform data directories": {
+      "score": 1.0,
+      "details": {
+        "config_file_exists": true,
+        "patterns_found": 9,
+        "total_patterns": 9,
+        "has_config_class": true,
+        "pattern_details": [
+          "Platform detection: ✓",
+          "Home directory: ✓",
+          "Windows path: ✓",
+          "macOS path: ✓",
+          "Linux path: ✓",
+          "Directory creation: ✓",
+          "Safe creation: ✓",
+          "get_data_dir function: ✓",
+          "ensure_directories function: ✓"
+        ]
+      }
+    },
+    "P1.3.5 - Intelligent chunking (500 tokens, 50 overlap)": {
+      "score": 1.0,
+      "details": {
+        "file_exists": true,
+        "patterns_found": 10,
+        "total_patterns": 10,
+        "file_size": 9079,
+        "size_score": 1.0,
+        "pattern_score": 1.0,
+        "pattern_details": [
+          "Chunk size 500: ✓",
+          "Overlap 50: ✓",
+          "Chunking function: ✓",
+          "Token counting: ✓",
+          "Sentence splitting: ✓",
+          "Regex splitting: ✓",
+          "Natural boundaries: ✓",
+          "Chunker class: ✓",
+          "Separators: ✓",
+          "Constructor: ✓"
+        ]
+      }
+    },
+    "P1.6.1 - Complete ChromaDB vector store client": {
+      "score": 1.0,
+      "details": {
+        "file_exists": true,
+        "patterns_found": 10,
+        "total_patterns": 10,
+        "file_size": 28150,
+        "size_score": 1.0,
+        "pattern_score": 1.0,
+        "pattern_details": [
+          "ChromaDB import: ✓",
+          "ChromaClient class: ✓",
+          "Search function: ✓",
+          "Add documents: ✓",
+          "Get collection: ✓",
+          "Persistence: ✓",
+          "Embedding function: ✓",
+          "Similarity search: ✓",
+          "Top-K parameter: ✓",
+          "Metadata handling: ✓"
+        ]
+      }
+    },
+    "P1.8.2 - Support multiple LLM models": {
+      "score": 1.0,
+      "details": {
+        "file_exists": true,
+        "patterns_found": 10,
+        "total_patterns": 10,
+        "file_size": 20711,
+        "size_score": 1.0,
+        "pattern_score": 1.0,
+        "pattern_details": [
+          "Llama 2 7B: ✓",
+          "Mistral 7B: ✓",
+          "Neural Chat: ✓",
+          "Ollama integration: ✓",
+          "Generate function: ✓",
+          "Temperature control: ✓",
+          "Token limit: ✓",
+          "Streaming support: ✓",
+          "Model manager: ✓",
+          "Multiple models: ✓"
+        ]
+      }
+    }
+  },
+  "summary": {
+    "average_score": 0.9780219780219781,
+    "completion_rate": 100.0,
+    "completed_tasks": 7,
+    "total_tasks": 7
+  }
+}

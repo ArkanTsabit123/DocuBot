@@ -1,8 +1,11 @@
+# docubot/src/core/config.py
+
 """
 DocuBot Configuration Management
 """
 
 import os
+import platform  # <- TAMBAH INI
 from pathlib import Path
 from typing import Dict, Any, Optional
 import yaml
@@ -39,6 +42,8 @@ class AppConfig:
     ui_font_size: int = 12
     
     def __post_init__(self):
+        # Use platform-specific data directory
+        self.data_dir = AppConfig.get_data_dir()  # <- PERUBAHAN: gunakan get_data_dir()
         self.data_dir.mkdir(exist_ok=True)
         self.models_dir = self.data_dir / "models"
         self.documents_dir = self.data_dir / "documents"
@@ -48,6 +53,47 @@ class AppConfig:
         for directory in [self.models_dir, self.documents_dir, self.database_dir, self.logs_dir]:
             directory.mkdir(parents=True, exist_ok=True)
 
+    @staticmethod
+    def get_data_dir() -> Path:
+        """
+        Get platform-specific data directory
+        
+        Returns:
+            Path to data directory
+        """
+        system = platform.system()
+        home = Path.home()
+        
+        if system == "Windows":
+            return home / "AppData" / "Local" / "DocuBot"
+        elif system == "Darwin":  # macOS
+            return home / "Library" / "Application Support" / "DocuBot"
+        else:  # Linux/Unix
+            return home / ".docubot"
+    
+    @staticmethod
+    def ensure_directories() -> None:
+        """Create all required application directories"""
+        data_dir = AppConfig.get_data_dir()  # <- PERUBAHAN: AppConfig bukan Config
+        
+        directories = [
+            data_dir,
+            data_dir / "models",
+            data_dir / "database",
+            data_dir / "documents",
+            data_dir / "uploads",
+            data_dir / "processed",
+            data_dir / "exports",
+            data_dir / "logs",
+            data_dir / "cache",
+        ]
+        
+        for directory in directories:
+            try:
+                directory.mkdir(parents=True, exist_ok=True)
+                print(f"Created directory: {directory}")
+            except Exception as e:
+                print(f"Error creating directory {directory}: {e}")
 
 class ConfigManager:
     def __init__(self, config_path: Optional[Path] = None):
