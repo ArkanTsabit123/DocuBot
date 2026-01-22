@@ -55,6 +55,46 @@ venv.bak/
 *.bak
 
 # ============================================
+# DEVELOPMENT UTILITY FILES (tidak sengaja terupload)
+# ============================================
+
+# File-file development yang tidak perlu di repo
+1. Code Structure & Implementation Issues.py
+10. fixtracker.py
+11. check_gitignore.py
+12. smart_validator.py
+13. test_llm_fix.py
+2. Core Logic & Missing Features.py
+3. Testing & Validation.py
+4. UI Components & Forms.py
+5. Professional Standards.py
+6. complete tracker-v.1.0.py
+7. complete-structure-v.1.0.py
+8. complete-timeline.md
+9. structure_validator.py
+config di root.rar
+test-debug.py
+install_docubot.py
+
+# Pattern untuk file serupa di masa depan
+* Issues.py
+* Features.py
+* Validation.py
+* Forms.py
+* Standards.py
+*tracker*.py
+*validator*.py
+test-*.py
+debug-*.py
+install_*.py
+uninstall_*.py
+setup_*.py
+check_*.py
+fix_*.py
+*.debug.py
+*.test.py
+
+# ============================================
 # DOCUBOT SPECIFIC EXCLUSIONS
 # ============================================
 
