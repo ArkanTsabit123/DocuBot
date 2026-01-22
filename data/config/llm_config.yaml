@@ -1,0 +1,224 @@
+#docubot/data/config/llm_config.yaml
+
+# Ollama server settings
+ollama:
+  host: "http://localhost:11434"
+  timeout: 120
+  verify_ssl: false
+
+# Default model settings
+default_model: "llama2:7b"
+fallback_model: "mistral:7b"
+
+# Default generation parameters 
+default_parameters:
+  temperature: 0.1
+  top_p: 0.9
+  top_k: 40
+  num_predict: 1024
+  repeat_penalty: 1.1
+  seed: 42
+  num_ctx: 4096
+
+# Generation settings
+generation:
+  max_retries: 3
+  retry_delay: 2
+  timeout: 300
+  streaming_chunk_size: 100
+
+# Model configurations 
+model_configs:
+  llama2:7b:
+    display_name: "Llama 2 7B"
+    description: "Meta Llama 2 7B parameter model - Good balance of speed and quality"
+    context_window: 4096
+    parameters:
+      temperature: 0.1
+      top_p: 0.9
+      top_k: 40
+      num_predict: 1024
+    requirements:
+      ram: "8GB minimum"
+      storage: "4.2GB"
+      download_size: "3.8GB"
+      vram: "Optional, 4GB+ for acceleration"
+  
+  mistral:7b:
+    display_name: "Mistral 7B"
+    description: "Mistral AI 7B parameter model - Fast and efficient"
+    context_window: 8192
+    parameters:
+      temperature: 0.2
+      top_p: 0.95
+      top_k: 50
+      num_predict: 2048
+    requirements:
+      ram: "8GB"
+      storage: "4.1GB"
+      download_size: "4.1GB"
+  
+  neural-chat:7b:
+    display_name: "Neural Chat 7B"
+    description: "Intel Neural Chat 7B parameter model - High accuracy for conversations"
+    context_window: 4096
+    parameters:
+      temperature: 0.05
+      top_p: 0.9
+      top_k: 40
+      num_predict: 1024
+    requirements:
+      ram: "8GB"
+      storage: "4.3GB"
+      download_size: "4.3GB"
+  
+  # Additional models from your file
+  llama2:13b:
+    display_name: "Llama 2 13B"
+    description: "Meta Llama 2 13B parameter model - Higher quality, requires more RAM"
+    context_window: 4096
+    parameters:
+      temperature: 0.1
+      top_p: 0.9
+      top_k: 40
+      num_predict: 1024
+    requirements:
+      ram: "16GB"
+      storage: "7.8GB"
+      download_size: "7.8GB"
+  
+  codellama:7b:
+    display_name: "Code Llama 7B"
+    description: "Code generation model based on Llama 2 - Specialized for programming"
+    context_window: 16384
+    parameters:
+      temperature: 0.1
+      top_p: 0.95
+      top_k: 50
+      num_predict: 2048
+    requirements:
+      ram: "8GB"
+      storage: "3.8GB"
+      download_size: "3.8GB"
+  
+  # Add models from my file for compatibility
+  llama3:8b:
+    display_name: "Llama 3 8B"
+    description: "Meta Llama 3 8B parameter model - Latest generation, improved reasoning"
+    context_window: 8192
+    parameters:
+      temperature: 0.1
+      top_p: 0.9
+      num_predict: 2048
+    requirements:
+      ram: "16GB recommended"
+      storage: "5.0GB"
+  
+  mixtral:8x7b:
+    display_name: "Mixtral 8x7B"
+    description: "Mixture of Experts model - High quality but resource intensive"
+    context_window: 32768
+    parameters:
+      temperature: 0.1
+      top_p: 0.9
+      num_predict: 4096
+    requirements:
+      ram: "32GB+ recommended"
+      storage: "25GB"
+
+# System prompt templates
+system_prompts:
+  default: |
+    You are DocuBot, a helpful AI assistant that answers questions based on the provided documents.
+    You should provide accurate, concise, and helpful answers. If you don't know something based on the documents,
+    say so rather than making up information.
+    
+    Guidelines:
+    1. Base your answers only on the provided document context
+    2. Be concise but thorough
+    3. Cite specific parts of documents when relevant
+    4. If the answer isn't in the documents, say so clearly
+    5. Format responses clearly with paragraphs and bullet points when helpful
+    
+  concise: |
+    You are DocuBot. Provide concise answers based on the documents.
+    Keep responses brief and to the point.
+    
+  detailed: |
+    You are DocuBot. Provide detailed, comprehensive answers based on the documents.
+    Include explanations, context, and examples where helpful.
+    Structure your response with clear sections if appropriate.
+    
+  code: |
+    You are DocuBot, specialized in code analysis and programming questions.
+    Provide code examples, explanations, and best practices based on the provided documentation.
+    Format code properly with appropriate syntax highlighting indications.
+    
+  research: |
+    You are DocuBot, assisting with research and academic documents.
+    Provide analytical answers, compare different sources, and highlight key findings.
+    Include citations to specific document sections.
+
+# Response formatting 
+formatting:
+  include_sources: true
+  max_source_count: 5
+  citation_format: "markdown"
+  trim_responses: true
+  max_response_length: 5000
+  enable_markdown: true
+
+# Model management settings
+model_management:
+  auto_check_updates: true
+  update_check_interval_hours: 24
+  auto_download_popular: false
+  cache_models: true
+  cleanup_old_models_days: 30
+
+# Performance settings
+performance:
+  enable_caching: true
+  cache_size_mb: 500
+  batch_size: 32
+  max_concurrent_requests: 4
+
+# Advanced settings
+advanced:
+  custom_modelfiles: []
+  experimental_features: false
+  debug_logging: false
+  custom_parameters: {}
+
+# Model selection strategy 
+model_selection:
+  strategy: "auto"  
+  auto_select_criteria:
+    - "available_ram"
+    - "task_complexity"
+    - "response_time"
+  
+  fallback_chain:
+    - "llama3:8b"
+    - "llama2:7b"
+    - "mistral:7b"
+    - "neural-chat:7b"
+
+# Prompt templates for RAG workflow
+rag_prompts:
+  query_template: |
+    Context from documents:
+    {context}
+    
+    User question: {question}
+    
+    Based on the provided context, please answer the user's question.
+    If the context doesn't contain relevant information, say so.
+    Always cite which document(s) you got information from.
+  
+  summarization_template: |
+    Document content:
+    {document_content}
+    
+    Please provide a concise summary of this document.
+    Include key points, main arguments, and important findings.

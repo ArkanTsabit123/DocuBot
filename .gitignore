@@ -55,47 +55,37 @@ venv.bak/
 *.bak
 
 # ============================================
-# DEVELOPMENT UTILITY FILES (tidak sengaja terupload)
+# DEVELOPMENT UTILITY FILES
 # ============================================
 
-# File-file development yang tidak perlu di repo
-1. Code Structure & Implementation Issues.py
-10. fixtracker.py
-11. check_gitignore.py
-12. smart_validator.py
-13. test_llm_fix.py
-2. Core Logic & Missing Features.py
-3. Testing & Validation.py
-4. UI Components & Forms.py
-5. Professional Standards.py
-6. complete tracker-v.1.0.py
-7. complete-structure-v.1.0.py
-8. complete-timeline.md
-9. structure_validator.py
-config di root.rar
-test-debug.py
-install_docubot.py
+# Development tracking and utility files
+1. complete tracker-v.1.0.py
+2. complete-structure-v.1.0.py
+3. check_progress.py
 
-# Pattern untuk file serupa di masa depan
-* Issues.py
-* Features.py
-* Validation.py
-* Forms.py
-* Standards.py
+# Development file patterns
+[0-9]*. *.py
+[0-9]*. *.md
+[0-9]*. *.txt
 *tracker*.py
 *validator*.py
-test-*.py
-debug-*.py
-install_*.py
-uninstall_*.py
-setup_*.py
-check_*.py
-fix_*.py
+*check_*.py
+*test-*.py
+*debug-*.py
+*setup_*.py
+*fix*.py
 *.debug.py
 *.test.py
 
+# Progress tracking files
+.docubot_progress.json
+.docubot_progress_*.json
+*.progress.json
+*_progress.json
+smart_validation_report.json
+
 # ============================================
-# DOCUBOT SPECIFIC EXCLUSIONS
+# APPLICATION SPECIFIC EXCLUSIONS
 # ============================================
 
 # User-specific configuration overrides
@@ -105,7 +95,7 @@ data/config/user_settings.yaml
 data/config/local_*.yaml
 data/config/local_*.json
 
-# Database storage (user-generated content)
+# Database storage
 data/database/chroma/
 data/database/*.db
 data/database/*.sqlite
@@ -241,15 +231,31 @@ poetry.lock
 .python-version
 
 # ============================================
-# REQUIRED TRACKED FILES
+# REQUIRED FILES (EXCEPTIONS)
 # ============================================
-# Template and example configurations
+
+# Documentation
+!docs/
+!docs/**/*
+
+# Test files
+!tests/
+!tests/**/*
+
+# Source code
+!src/
+!src/**/*.py
+!scripts/
+!scripts/**/*.py
+
+# Configuration templates
 !data/config/app_config.yaml
 !data/config/llm_config.yaml
 !data/config/ui_config.yaml
 !data/config/shortcuts.json
 !data/config/example_config.yaml
 
-# Documentation files
-!data/models/README.md
-!models/README.md
+# Project files
+!requirements.txt
+!app.py
+!install_docubot.py

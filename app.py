@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+# app.py
 """
 DocuBot - Main Application Entry Point
 Local AI Knowledge Assistant for Document Management and Querying

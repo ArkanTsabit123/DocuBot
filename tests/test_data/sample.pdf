@@ -1,0 +1,304 @@
+%PDF-1.4
+
+1 0 obj
+<<
+/Type /Catalog
+/Pages 2 0 R
+>>
+endobj
+
+2 0 obj
+<<
+/Type /Pages
+/Kids [3 0 R]
+/Count 1
+>>
+endobj
+
+3 0 obj
+<<
+/Type /Page
+/Parent 2 0 R
+/MediaBox [0 0 612 792]
+/Contents 4 0 R
+/Resources << /Font << /F1 5 0 R >> >>
+>>
+endobj
+
+4 0 obj
+<<
+/Length 20928
+>>
+stream
+BT /F1 14 Tf 72 720 Td (DocuBot Comprehensive Test PDF Document) Tj ET
+BT /F1 12 Tf 72 690 Td (Version: 1.0 - Created for Unit Testing) Tj ET
+BT /F1 10 Tf 72 660 Td (This document contains sufficient content for PDF extraction testing.) Tj ET
+BT /F1 10 Tf 72 630 Td (Paragraph 1: The DocuBot application requires robust PDF processing capabilities.) Tj ET
+BT /F1 9 Tf 90 615 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 603 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 591 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 579 Td (Paragraph 2: This test document validates the integration of PyPDF2 and pdfplumber libraries.) Tj ET
+BT /F1 9 Tf 90 564 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 552 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 540 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 528 Td (Paragraph 3: Multiple extraction methods must be tested to ensure reliability.) Tj ET
+BT /F1 9 Tf 90 513 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 501 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 489 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 477 Td (Paragraph 4: Document chunking algorithms depend on proper text extraction.) Tj ET
+BT /F1 9 Tf 90 462 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 450 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 438 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 426 Td (Paragraph 5: The vector store requires accurate embeddings from extracted content.) Tj ET
+BT /F1 9 Tf 90 411 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 399 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 387 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 375 Td (Paragraph 6: Test coverage includes edge cases and various document structures.) Tj ET
+BT /F1 9 Tf 90 360 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 348 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 336 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 324 Td (Paragraph 7: Performance metrics are collected during document processing.) Tj ET
+BT /F1 9 Tf 90 309 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 297 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 285 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 273 Td (Paragraph 8: Error handling mechanisms are validated through test scenarios.) Tj ET
+BT /F1 9 Tf 90 258 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 246 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 234 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 222 Td (Paragraph 9: The RAG pipeline depends on quality text extraction results.) Tj ET
+BT /F1 9 Tf 90 207 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 195 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 183 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 171 Td (Paragraph 10: Metadata extraction supplements the primary text content.) Tj ET
+BT /F1 9 Tf 90 156 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 144 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 132 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 120 Td (Paragraph 11: The DocuBot application requires robust PDF processing capabilities.) Tj ET
+BT /F1 9 Tf 90 105 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 93 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 81 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 69 Td (Paragraph 12: This test document validates the integration of PyPDF2 and pdfplumber libraries.) Tj ET
+BT /F1 9 Tf 90 54 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 42 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 30 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 18 Td (Paragraph 13: Multiple extraction methods must be tested to ensure reliability.) Tj ET
+BT /F1 9 Tf 90 3 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -9 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -21 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -33 Td (Paragraph 14: Document chunking algorithms depend on proper text extraction.) Tj ET
+BT /F1 9 Tf 90 -48 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -60 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -72 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -84 Td (Paragraph 15: The vector store requires accurate embeddings from extracted content.) Tj ET
+BT /F1 9 Tf 90 -99 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -111 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -123 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -135 Td (Paragraph 16: Test coverage includes edge cases and various document structures.) Tj ET
+BT /F1 9 Tf 90 -150 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -162 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -174 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -186 Td (Paragraph 17: Performance metrics are collected during document processing.) Tj ET
+BT /F1 9 Tf 90 -201 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -213 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -225 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -237 Td (Paragraph 18: Error handling mechanisms are validated through test scenarios.) Tj ET
+BT /F1 9 Tf 90 -252 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -264 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -276 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -288 Td (Paragraph 19: The RAG pipeline depends on quality text extraction results.) Tj ET
+BT /F1 9 Tf 90 -303 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -315 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -327 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -339 Td (Paragraph 20: Metadata extraction supplements the primary text content.) Tj ET
+BT /F1 9 Tf 90 -354 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -366 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -378 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -390 Td (Paragraph 21: The DocuBot application requires robust PDF processing capabilities.) Tj ET
+BT /F1 9 Tf 90 -405 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -417 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -429 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -441 Td (Paragraph 22: This test document validates the integration of PyPDF2 and pdfplumber libraries.) Tj ET
+BT /F1 9 Tf 90 -456 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -468 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -480 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -492 Td (Paragraph 23: Multiple extraction methods must be tested to ensure reliability.) Tj ET
+BT /F1 9 Tf 90 -507 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -519 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -531 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -543 Td (Paragraph 24: Document chunking algorithms depend on proper text extraction.) Tj ET
+BT /F1 9 Tf 90 -558 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -570 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -582 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -594 Td (Paragraph 25: The vector store requires accurate embeddings from extracted content.) Tj ET
+BT /F1 9 Tf 90 -609 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -621 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -633 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -645 Td (Paragraph 26: Test coverage includes edge cases and various document structures.) Tj ET
+BT /F1 9 Tf 90 -660 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -672 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -684 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -696 Td (Paragraph 27: Performance metrics are collected during document processing.) Tj ET
+BT /F1 9 Tf 90 -711 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -723 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -735 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -747 Td (Paragraph 28: Error handling mechanisms are validated through test scenarios.) Tj ET
+BT /F1 9 Tf 90 -762 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -774 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -786 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -798 Td (Paragraph 29: The RAG pipeline depends on quality text extraction results.) Tj ET
+BT /F1 9 Tf 90 -813 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -825 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -837 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -849 Td (Paragraph 30: Metadata extraction supplements the primary text content.) Tj ET
+BT /F1 9 Tf 90 -864 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -876 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -888 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -900 Td (Paragraph 31: The DocuBot application requires robust PDF processing capabilities.) Tj ET
+BT /F1 9 Tf 90 -915 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -927 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -939 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -951 Td (Paragraph 32: This test document validates the integration of PyPDF2 and pdfplumber libraries.) Tj ET
+BT /F1 9 Tf 90 -966 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -978 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -990 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -1002 Td (Paragraph 33: Multiple extraction methods must be tested to ensure reliability.) Tj ET
+BT /F1 9 Tf 90 -1017 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1029 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1041 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -1053 Td (Paragraph 34: Document chunking algorithms depend on proper text extraction.) Tj ET
+BT /F1 9 Tf 90 -1068 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1080 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1092 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -1104 Td (Paragraph 35: The vector store requires accurate embeddings from extracted content.) Tj ET
+BT /F1 9 Tf 90 -1119 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1131 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1143 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -1155 Td (Paragraph 36: Test coverage includes edge cases and various document structures.) Tj ET
+BT /F1 9 Tf 90 -1170 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1182 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1194 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -1206 Td (Paragraph 37: Performance metrics are collected during document processing.) Tj ET
+BT /F1 9 Tf 90 -1221 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1233 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1245 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -1257 Td (Paragraph 38: Error handling mechanisms are validated through test scenarios.) Tj ET
+BT /F1 9 Tf 90 -1272 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1284 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1296 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -1308 Td (Paragraph 39: The RAG pipeline depends on quality text extraction results.) Tj ET
+BT /F1 9 Tf 90 -1323 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1335 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1347 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -1359 Td (Paragraph 40: Metadata extraction supplements the primary text content.) Tj ET
+BT /F1 9 Tf 90 -1374 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1386 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1398 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -1410 Td (Paragraph 41: The DocuBot application requires robust PDF processing capabilities.) Tj ET
+BT /F1 9 Tf 90 -1425 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1437 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1449 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -1461 Td (Paragraph 42: This test document validates the integration of PyPDF2 and pdfplumber libraries.) Tj ET
+BT /F1 9 Tf 90 -1476 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1488 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1500 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -1512 Td (Paragraph 43: Multiple extraction methods must be tested to ensure reliability.) Tj ET
+BT /F1 9 Tf 90 -1527 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1539 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1551 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -1563 Td (Paragraph 44: Document chunking algorithms depend on proper text extraction.) Tj ET
+BT /F1 9 Tf 90 -1578 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1590 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1602 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -1614 Td (Paragraph 45: The vector store requires accurate embeddings from extracted content.) Tj ET
+BT /F1 9 Tf 90 -1629 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1641 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1653 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -1665 Td (Paragraph 46: Test coverage includes edge cases and various document structures.) Tj ET
+BT /F1 9 Tf 90 -1680 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1692 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1704 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -1716 Td (Paragraph 47: Performance metrics are collected during document processing.) Tj ET
+BT /F1 9 Tf 90 -1731 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1743 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1755 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -1767 Td (Paragraph 48: Error handling mechanisms are validated through test scenarios.) Tj ET
+BT /F1 9 Tf 90 -1782 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1794 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1806 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -1818 Td (Paragraph 49: The RAG pipeline depends on quality text extraction results.) Tj ET
+BT /F1 9 Tf 90 -1833 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1845 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1857 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 10 Tf 72 -1869 Td (Paragraph 50: Metadata extraction supplements the primary text content.) Tj ET
+BT /F1 9 Tf 90 -1884 Td (• Detail point 1: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1896 Td (• Detail point 2: Additional testing content for size requirements.) Tj ET
+BT /F1 9 Tf 90 -1908 Td (• Detail point 3: Additional testing content for size requirements.) Tj ET
+BT /F1 12 Tf 72 -1920 Td (Document Summary) Tj ET
+BT /F1 10 Tf 72 -1940 Td (Total paragraphs: 50) Tj ET
+BT /F1 10 Tf 72 -1955 Td (Content lines: 205) Tj ET
+BT /F1 10 Tf 72 -1970 Td (Purpose: PDF extraction validation for DocuBot) Tj ET
+endstream
+endobj
+
+5 0 obj
+<<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica
+>>
+endobj
+
+xref
+0 44
+0000000000 65535 f
+0000000009 00000 n
+0000000010 00000 n
+0000000018 00000 n
+0000000021 00000 n
+0000000036 00000 n
+0000000049 00000 n
+0000000052 00000 n
+0000000059 00000 n
+0000000060 00000 n
+0000000068 00000 n
+0000000071 00000 n
+0000000084 00000 n
+0000000098 00000 n
+0000000107 00000 n
+0000000110 00000 n
+0000000117 00000 n
+0000000118 00000 n
+0000000126 00000 n
+0000000129 00000 n
+0000000141 00000 n
+0000000155 00000 n
+0000000179 00000 n
+0000000195 00000 n
+0000000234 00000 n
+0000000237 00000 n
+0000000244 00000 n
+0000000245 00000 n
+0000000253 00000 n
+0000000256 00000 n
+0000000270 00000 n
+0000000273 00000 n
+0000000280 00000 n
+0000021509 00000 n
+0000021519 00000 n
+0000021526 00000 n
+0000021527 00000 n
+0000021535 00000 n
+0000021538 00000 n
+0000021550 00000 n
+0000021566 00000 n
+0000021587 00000 n
+0000021590 00000 n
+0000021597 00000 n
+trailer
+<<
+/Size 44
+/Root 1 0 R
+>>
+startxref
+21597
+%%EOF

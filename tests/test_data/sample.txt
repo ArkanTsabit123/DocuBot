@@ -1,0 +1,14 @@
+Test Document for DocuBot Unit Testing
+==========================================
+
+This is a sample text document for testing the DocuBot document processor.
+
+Document Content:
+- First paragraph with some text for extraction testing.
+- Second paragraph to test multi-paragraph handling.
+- Third paragraph with special characters: !@#$%^&*()
+- Fourth paragraph with numbers: 1234567890
+
+The processor should extract this text, clean it, and split it into chunks.
+
+Final paragraph for testing completeness.
