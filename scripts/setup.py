@@ -1,6 +1,7 @@
-#docubot/scripts/setup.py
+# docubot/scripts/setup.py
+
 """
-DocuBot Setup Script - Python 3.13 Compatible
+DocuBot Setup and Installation Script
 """
 
 import sys
@@ -9,34 +10,32 @@ import platform
 import subprocess
 import importlib.util
 from pathlib import Path
+from datetime import datetime
 
 def print_header(text):
-    """Print formatted header."""
+    """Display formatted section header."""
     print("\n" + "=" * 60)
     print(f" {text}")
     print("=" * 60)
 
 def check_python_version():
-    """Check Python version requirement."""
-    print("Checking Python version...")
+    """Verify Python version meets minimum requirements."""
+    print("Verifying Python version...")
     major, minor, micro = sys.version_info[:3]
     
     if major < 3 or (major == 3 and minor < 11):
-        print(f"ERROR: Python 3.11+ required. Found {major}.{minor}.{micro}")
+        print(f"ERROR: Python 3.11+ required. Current version: {major}.{minor}.{micro}")
         return False
-    else:
-        print(f"SUCCESS: Python {major}.{minor}.{micro}")
-        return True
+    print(f"SUCCESS: Python {major}.{minor}.{micro}")
+    return True
 
 def install_with_pip(package_spec, upgrade_pip=True):
-    """Install a package with pip."""
+    """Install package using pip with extended error handling."""
     try:
         cmd = [sys.executable, "-m", "pip", "install"]
         
         if upgrade_pip:
-            # Try with --break-system-packages for newer Python
             cmd.append("--break-system-packages")
-        
         cmd.append(package_spec)
         
         print(f"  Installing: {package_spec}")
@@ -49,26 +48,27 @@ def install_with_pip(package_spec, upgrade_pip=True):
         )
         
         if result.returncode == 0:
-            print(f"    ✓ SUCCESS: {package_spec}")
+            print(f"    SUCCESS: {package_spec}")
             return True
-        else:
-            print(f"    ✗ FAILED: {package_spec}")
-            if "error" in result.stderr.lower():
-                error_lines = [line for line in result.stderr.split('\n') if 'error' in line.lower()]
-                for err in error_lines[:3]:
-                    print(f"      {err[:100]}...")
-            return False
+        
+        print(f"    FAILED: {package_spec}")
+        if "error" in result.stderr.lower():
+            error_lines = [line for line in result.stderr.split('\n') 
+                          if 'error' in line.lower()]
+            for err in error_lines[:3]:
+                print(f"      {err[:100]}")
+        return False
             
     except subprocess.TimeoutExpired:
-        print(f"    ⏱ TIMEOUT: {package_spec}")
+        print(f"    TIMEOUT: {package_spec}")
         return False
     except Exception as e:
-        print(f"    ✗ ERROR: {package_spec} - {e}")
+        print(f"    ERROR: {package_spec} - {e}")
         return False
 
 def install_requirements_313():
-    """Install packages optimized for Python 3.13."""
-    print_header("INSTALLING PACKAGES")
+    """Install packages with priority grouping for Python 3.13."""
+    print_header("PACKAGE INSTALLATION")
     
     requirements_file = Path(__file__).parent.parent / "requirements.txt"
     
@@ -78,21 +78,16 @@ def install_requirements_313():
     
     print(f"Using requirements from: {requirements_file}")
     
-    # First, upgrade pip
-    print("\n1. Upgrading pip...")
+    print("\nUpgrading pip...")
     install_with_pip("pip", upgrade_pip=False)
     
-    # Read requirements
     with open(requirements_file, 'r', encoding='utf-8') as f:
-        requirements = [line.strip() for line in f if line.strip() and not line.startswith('#')]
+        requirements = [line.strip() for line in f 
+                       if line.strip() and not line.startswith('#')]
     
-    print(f"\n2. Found {len(requirements)} packages to install")
+    print(f"\nFound {len(requirements)} packages to install")
     
-    # Group by priority
-    priority_1 = []  # Core framework
-    priority_2 = []  # Document processing
-    priority_3 = []  # AI/ML
-    priority_4 = []  # Optional
+    priority_1, priority_2, priority_3, priority_4 = [], [], [], []
     
     for req in requirements:
         req_lower = req.lower()
@@ -115,7 +110,6 @@ def install_requirements_313():
         else:
             priority_4.append(req)
     
-    # Install in priority order
     results = {
         'priority_1': {'total': len(priority_1), 'success': 0},
         'priority_2': {'total': len(priority_2), 'success': 0},
@@ -123,27 +117,26 @@ def install_requirements_313():
         'priority_4': {'total': len(priority_4), 'success': 0},
     }
     
-    print("\n3. Installing PRIORITY 1 - Core Framework")
+    print("\nInstalling Priority 1 - Core Framework")
     for package in priority_1:
         if install_with_pip(package):
             results['priority_1']['success'] += 1
     
-    print("\n4. Installing PRIORITY 2 - Document Processing")
+    print("\nInstalling Priority 2 - Document Processing")
     for package in priority_2:
         if install_with_pip(package):
             results['priority_2']['success'] += 1
     
-    print("\n5. Installing PRIORITY 3 - AI/ML")
+    print("\nInstalling Priority 3 - AI/ML Components")
     for package in priority_3:
         if install_with_pip(package):
             results['priority_3']['success'] += 1
     
-    print("\n6. Installing PRIORITY 4 - Optional")
+    print("\nInstalling Priority 4 - Optional Dependencies")
     for package in priority_4:
         if install_with_pip(package):
             results['priority_4']['success'] += 1
     
-    # Summary
     print_header("INSTALLATION SUMMARY")
     
     total_packages = sum(r['total'] for r in results.values())
@@ -153,30 +146,27 @@ def install_requirements_313():
     print(f"Successfully installed: {total_success}")
     print(f"Failed: {total_packages - total_success}")
     
-    print("\nBreakdown:")
+    print("\nBreakdown by priority:")
     for key, data in results.items():
         success_rate = (data['success'] / data['total']) * 100 if data['total'] > 0 else 100
         print(f"  {key}: {data['success']}/{data['total']} ({success_rate:.1f}%)")
     
-    # Consider installation successful if core packages are installed
     core_success_rate = results['priority_1']['success'] / results['priority_1']['total'] if results['priority_1']['total'] > 0 else 0
     
-    if core_success_rate >= 0.8:  # 80% of core packages
-        print(f"\n✓ SUCCESS: Core packages installed ({core_success_rate*100:.1f}%)")
+    if core_success_rate >= 0.8:
+        print(f"\nSUCCESS: Core packages installed ({core_success_rate*100:.1f}%)")
         return True
-    else:
-        print(f"\n✗ FAILED: Not enough core packages installed ({core_success_rate*100:.1f}%)")
-        return False
+    
+    print(f"\nFAILED: Insufficient core packages installed ({core_success_rate*100:.1f}%)")
+    return False
 
 def create_directories_simple():
-    """Create necessary directories."""
+    """Create essential project directories."""
     print_header("CREATING DIRECTORIES")
     
     project_root = Path(__file__).parent.parent
     
-    # Define directories
     directories = [
-        # Project directories
         project_root / "data",
         project_root / "data" / "config",
         project_root / "data" / "logs",
@@ -186,7 +176,6 @@ def create_directories_simple():
         project_root / "data" / "exports",
         project_root / "data" / "cache",
         
-        # User directories (platform-specific)
         Path.home() / ".docubot",
         Path.home() / ".docubot" / "config",
         Path.home() / ".docubot" / "documents",
@@ -198,22 +187,112 @@ def create_directories_simple():
         try:
             directory.mkdir(parents=True, exist_ok=True)
             if directory.exists():
-                print(f"  ✓ {directory}")
+                print(f"  {directory}")
                 created += 1
             else:
-                print(f"  ✗ Failed: {directory}")
+                print(f"  Failed: {directory}")
         except Exception as e:
-            print(f"  ✗ Error: {directory} - {e}")
+            print(f"  Error: {directory} - {e}")
     
     print(f"\nCreated {created} directories")
     return created > 0
 
+def setup_crossplatform_data_dirs() -> bool:
+    """Setup cross-platform data directories for production deployment."""
+    print_header("SETUP CROSS-PLATFORM DATA DIRECTORIES")
+    
+    try:
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+        from core.config import setup_crossplatform_dirs
+        
+        directories = setup_crossplatform_dirs()
+        
+        print(f"Created {len(directories)} directories:")
+        for name, path in directories.items():
+            if path.exists():
+                print(f"  SUCCESS: {name}: {path}")
+            else:
+                print(f"  FAILED: {name}: NOT CREATED")
+                return False
+        
+        from utilities.helpers import create_crossplatform_directories
+        helper_dirs = create_crossplatform_directories()
+        
+        print(f"Total directories verified: {len(helper_dirs)}")
+        return True
+        
+    except Exception as e:
+        print(f"Error setting up cross-platform directories: {e}")
+        
+        try:
+            system = platform.system()
+            
+            if system == "Windows":
+                base = Path(os.environ.get('APPDATA', 
+                         Path.home() / 'AppData' / 'Roaming')) / "DocuBot"
+            elif system == "Darwin":
+                base = Path.home() / "Library" / "Application Support" / "DocuBot"
+            elif system == "Linux":
+                base = Path.home() / ".local" / "share" / "docubot"
+            else:
+                base = Path.home() / ".docubot"
+            
+            subdirs = ["models", "documents", "database", "logs", "config", "cache"]
+            for subdir in subdirs:
+                (base / subdir).mkdir(parents=True, exist_ok=True)
+            
+            print(f"Fallback directories created at: {base}")
+            return True
+            
+        except Exception as fallback_error:
+            print(f"Fallback directory creation failed: {fallback_error}")
+            return False
+
+def setup_crossplatform_dirs():
+    """Setup cross-platform directories with enhanced compatibility."""
+    print_header("SETUP CROSS-PLATFORM DIRECTORIES")
+    
+    try:
+        import sys
+        sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+        from utilities.helpers import setup_crossplatform_directories
+        
+        directories = setup_crossplatform_directories()
+        
+        print("Created directories:")
+        for name, path in directories.items():
+            print(f"  {name}: {path}")
+        
+        test_file = directories['data'] / ".setup_complete"
+        test_file.write_text(f"Setup completed: {datetime.now()}")
+        
+        print(f"Successfully created {len(directories)} directories")
+        return True
+        
+    except Exception as e:
+        print(f"Error creating directories: {e}")
+        
+        try:
+            home = Path.home()
+            base_dir = home / ".docubot"
+            subdirs = ["models", "documents", "database", "logs", "config"]
+            
+            for subdir in subdirs:
+                (base_dir / subdir).mkdir(parents=True, exist_ok=True)
+                print(f"  Created: {base_dir / subdir}")
+            
+            print(f"Created fallback directories at: {base_dir}")
+            return True
+        except Exception as fallback_error:
+            print(f"Fallback directory creation failed: {fallback_error}")
+            return False
+
 def check_ollama_simple():
-    """Simple Ollama check."""
+    """Verify Ollama installation and service status."""
     print_header("CHECKING OLLAMA")
     
     try:
-        # Try to get version
         result = subprocess.run(
             ["ollama", "--version"],
             capture_output=True,
@@ -223,45 +302,42 @@ def check_ollama_simple():
         )
         
         if result.returncode == 0:
-            print(f"✓ Ollama installed: {result.stdout.strip()}")
+            print(f"Ollama installed: {result.stdout.strip()}")
             
-            # Check if service is running
             try:
                 import requests
                 response = requests.get("http://localhost:11434/api/tags", timeout=3)
                 if response.status_code == 200:
-                    print("✓ Ollama service is running")
+                    print("Ollama service is running")
                     models = response.json().get('models', [])
                     if models:
-                        print(f"  Available models: {len(models)}")
+                        print(f"Available models: {len(models)}")
                     else:
-                        print("  No models installed yet")
+                        print("No models installed")
                 else:
-                    print("⚠ Ollama service not responding")
+                    print("Ollama service not responding")
             except:
-                print("⚠ Could not check Ollama service status")
+                print("Could not verify Ollama service status")
             
             return True
-        else:
-            print("⚠ Ollama found but command failed")
-            return False
+        print("Ollama found but command execution failed")
+        return False
             
     except FileNotFoundError:
-        print("ℹ Ollama not installed (optional)")
-        print("\nTo install Ollama for AI features:")
+        print("Ollama not installed (optional component)")
+        print("\nTo install Ollama for AI functionality:")
         print("  1. Download from https://ollama.ai")
-        print("  2. Install and run: ollama pull llama2:7b")
+        print("  2. Install and execute: ollama pull llama2:7b")
         print("  3. Start service: ollama serve")
         return False
     except Exception as e:
-        print(f"⚠ Ollama check error: {e}")
+        print(f"Ollama verification error: {e}")
         return False
 
 def verify_core_installation():
-    """Verify that core packages are installed."""
+    """Validate core package installation status."""
     print_header("VERIFYING INSTALLATION")
     
-    # Core packages to verify
     core_packages = [
         ("fastapi", "fastapi"),
         ("uvicorn", "uvicorn"),
@@ -273,8 +349,7 @@ def verify_core_installation():
         ("chromadb", "chromadb"),
     ]
     
-    installed = []
-    missing = []
+    installed, missing = [], []
     
     for pip_name, import_name in core_packages:
         try:
@@ -282,64 +357,65 @@ def verify_core_installation():
             if spec is None:
                 raise ImportError
             installed.append(pip_name)
-            print(f"  ✓ {pip_name}")
+            print(f"  {pip_name}")
         except ImportError:
             missing.append(pip_name)
-            print(f"  ✗ {pip_name}")
+            print(f"  MISSING: {pip_name}")
     
     print(f"\nVerification: {len(installed)}/{len(core_packages)} packages installed")
     
-    if len(missing) == 0:
-        print("✓ All core packages installed")
+    if not missing:
+        print("All core packages installed successfully")
         return True
     elif len(missing) <= 2:
-        print(f"⚠ {len(missing)} packages missing: {', '.join(missing)}")
-        print("  Some features may be limited")
+        print(f"{len(missing)} packages missing: {', '.join(missing)}")
+        print("Limited functionality may be experienced")
         return True
-    else:
-        print(f"✗ {len(missing)} packages missing: {', '.join(missing)}")
-        return False
+    
+    print(f"{len(missing)} packages missing: {', '.join(missing)}")
+    return False
 
 def display_next_steps():
-    """Display next steps after setup."""
+    """Display post-installation instructions."""
     print_header("SETUP COMPLETE")
     
     print("\nNEXT STEPS:")
     print("1. Test the installation:")
-    print("   python -c \"import fastapi; import chromadb; print('Core packages OK')\"")
+    print("   python -c \"import fastapi; import chromadb; print('Core packages verified')\"")
     
-    print("\n2. Run DocuBot:")
-    print("   GUI mode:   python app.py")
-    print("   CLI mode:   python app.py cli")
-    print("   Web mode:   python app.py web")
+    print("\n2. Launch DocuBot:")
+    print("   GUI interface:   python app.py")
+    print("   CLI interface:   python app.py cli")
+    print("   Web interface:   python app.py web")
     
-    print("\n3. For AI features, install Ollama:")
+    print("\n3. For AI functionality, install Ollama:")
     print("   - Download from https://ollama.ai")
-    print("   - Run: ollama pull llama2:7b")
-    print("   - Start: ollama serve")
+    print("   - Execute: ollama pull llama2:7b")
+    print("   - Initialize: ollama serve")
     
-    print("\n4. Add your documents:")
+    print("\n4. Add documents for processing:")
     print("   - Place files in: ~/.docubot/documents/")
-    print("   - Or use the upload feature in the app")
+    print("   - Or utilize the application upload functionality")
     
-    print("\n5. Start querying your documents!")
+    print("\n5. Begin document querying")
     print("=" * 60)
 
 def main():
-    """Main setup function."""
+    """Primary setup execution function."""
     print("=" * 60)
-    print(" DOCUBOT - PYTHON 3.13 SETUP")
+    print(" DOCUBOT - PYTHON 3.13 COMPATIBILITY SETUP")
     print("=" * 60)
     
-    print(f"\nPython: {platform.python_version()}")
-    print(f"System: {platform.system()} {platform.release()}")
-    print(f"Arch: {platform.machine()}")
+    print(f"\nPython Version: {platform.python_version()}")
+    print(f"Operating System: {platform.system()} {platform.release()}")
+    print(f"Architecture: {platform.machine()}")
     
-    # Run setup steps
-    steps = [
+    setup_steps = [
         ("Python Version", check_python_version, True),
         ("Package Installation", install_requirements_313, True),
         ("Directory Setup", create_directories_simple, True),
+        ("Cross-Platform Directories", setup_crossplatform_dirs, True),
+        ("Cross-Platform Data Directories", setup_crossplatform_data_dirs, True),
         ("Installation Verify", verify_core_installation, True),
         ("Ollama Check", check_ollama_simple, False),
     ]
@@ -347,7 +423,7 @@ def main():
     results = []
     critical_failures = 0
     
-    for step_name, step_func, is_critical in steps:
+    for step_name, step_func, is_critical in setup_steps:
         print_header(step_name.upper())
         
         try:
@@ -364,29 +440,27 @@ def main():
             if is_critical:
                 critical_failures += 1
     
-    # Final summary
     print_header("SETUP SUMMARY")
     
     for step_name, success, is_critical, status in results:
         critical_marker = " (CRITICAL)" if is_critical else ""
         print(f"{status:8} {step_name}{critical_marker}")
     
-    # Final decision
     if critical_failures > 0:
-        print(f"\n✗ SETUP FAILED with {critical_failures} critical error(s)")
-        print("\nTroubleshooting:")
+        print(f"\nSETUP FAILED with {critical_failures} critical error(s)")
+        print("\nTroubleshooting recommendations:")
         print("1. Update pip: python -m pip install --upgrade pip")
-        print("2. Try manual install: pip install fastapi uvicorn pydantic")
-        print("3. Check Python version: Should be 3.11, 3.12, or 3.13")
+        print("2. Manual core installation: pip install fastapi uvicorn pydantic")
+        print("3. Verify Python version: 3.11, 3.12, or 3.13 required")
         return False
-    else:
-        display_next_steps()
-        return True
+    
+    display_next_steps()
+    return True
 
 if __name__ == "__main__":
     try:
         success = main()
         sys.exit(0 if success else 1)
     except KeyboardInterrupt:
-        print("\n\nSetup interrupted by user")
+        print("\nSetup interrupted by user")
         sys.exit(130)

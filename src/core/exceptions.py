@@ -1,10 +1,11 @@
-# docubot/src/core/exceptions.py
-
 """
 DocuBot Custom Exceptions and Error Handling System
 """
 
 import logging
+import sys
+import uuid
+import socket
 from typing import Dict, Any, Optional, Callable, TypeVar, Union
 from pathlib import Path
 from datetime import datetime
@@ -12,36 +13,73 @@ from datetime import datetime
 T = TypeVar('T')
 R = TypeVar('R')
 
-# ============================================================================
-# CORE EXCEPTION HIERARCHY
-# ============================================================================
+class ErrorCodes:
+    """Error code constants for consistent error reporting."""
+    
+    GENERIC = "DB_ERROR_000"
+    
+    CONFIG_GENERIC = "DB_ERROR_100"
+    
+    DOCUMENT_GENERIC = "DB_ERROR_200"
+    EXTRACTION = "DB_ERROR_210"
+    UNSUPPORTED_FORMAT = "DB_ERROR_211"
+    PROCESSING = "DB_ERROR_220"
+    CHUNKING = "DB_ERROR_221"
+    
+    DATABASE_GENERIC = "DB_ERROR_300"
+    
+    VECTOR_STORE = "DB_ERROR_400"
+    
+    AI_GENERIC = "DB_ERROR_500"
+    LLM = "DB_ERROR_510"
+    EMBEDDING = "DB_ERROR_520"
+    RAG = "DB_ERROR_530"
+    MODEL_MANAGEMENT = "DB_ERROR_540"
+    RATE_LIMIT = "DB_ERROR_511"
+    CONTEXT_LENGTH = "DB_ERROR_512"
+    
+    UI = "DB_ERROR_600"
+    
+    VALIDATION = "DB_ERROR_700"
+    
+    RESOURCE = "DB_ERROR_800"
+    
+    DIAGNOSTIC = "DB_ERROR_900"
+    
+    AUTHENTICATION = "DB_ERROR_1000"
+
 
 class DocuBotError(Exception):
-    """Base exception for all DocuBot-specific errors."""
     def __init__(self, message: str, context: Optional[Dict[str, Any]] = None):
         super().__init__(message)
         self.context = context or {}
         self.timestamp = datetime.now().isoformat()
-        self.error_code = "DB_ERROR_000"
+        self.error_code = ErrorCodes.GENERIC
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            'type': type(self).__name__,
+            'message': str(self),
+            'error_code': self.error_code,
+            'context': self.context,
+            'timestamp': self.timestamp
+        }
 
 
 class ConfigurationError(DocuBotError):
-    """Raised when configuration is invalid or missing."""
     def __init__(self, message: str, config_key: Optional[str] = None):
         super().__init__(message, {"config_key": config_key})
-        self.error_code = "DB_ERROR_100"
+        self.error_code = ErrorCodes.CONFIG_GENERIC
 
 
 class DocumentError(DocuBotError):
-    """Base exception for document-related errors."""
     def __init__(self, message: str, file_path: Optional[str] = None):
         context = {"file_path": file_path} if file_path else {}
         super().__init__(message, context)
-        self.error_code = "DB_ERROR_200"
+        self.error_code = ErrorCodes.DOCUMENT_GENERIC
 
 
 class ExtractionError(DocumentError):
-    """Raised when document text extraction fails."""
     def __init__(self, message: str, file_path: Optional[str] = None, 
                  format_type: Optional[str] = None):
         context = {}
@@ -50,22 +88,20 @@ class ExtractionError(DocumentError):
         if format_type is not None:
             context['format_type'] = format_type
         super().__init__(message, context)
-        self.error_code = "DB_ERROR_210"
+        self.error_code = ErrorCodes.EXTRACTION
 
 
 class UnsupportedFormatError(ExtractionError):
-    """Raised when document format is not supported."""
     def __init__(self, format_type: str, file_path: Optional[str] = None):
         message = f"Unsupported document format: {format_type}"
         context = {"format_type": format_type}
         if file_path is not None:
             context['file_path'] = file_path
         super().__init__(message, file_path, format_type)
-        self.error_code = "DB_ERROR_211"
+        self.error_code = ErrorCodes.UNSUPPORTED_FORMAT
 
 
 class ProcessingError(DocumentError):
-    """Raised when document processing fails."""
     def __init__(self, message: str, file_path: Optional[str] = None, 
                  stage: Optional[str] = None):
         context = {}
@@ -74,18 +110,16 @@ class ProcessingError(DocumentError):
         if stage is not None:
             context['stage'] = stage
         super().__init__(message, context)
-        self.error_code = "DB_ERROR_220"
+        self.error_code = ErrorCodes.PROCESSING
 
 
 class ChunkingError(ProcessingError):
-    """Raised when text chunking fails."""
     def __init__(self, message: str, file_path: Optional[str] = None):
         super().__init__(message, file_path, "chunking")
-        self.error_code = "DB_ERROR_221"
+        self.error_code = ErrorCodes.CHUNKING
 
 
 class DatabaseError(DocuBotError):
-    """Raised when database operations fail."""
     def __init__(self, message: str, operation: Optional[str] = None,
                  query: Optional[str] = None):
         context = {}
@@ -94,27 +128,24 @@ class DatabaseError(DocuBotError):
         if query is not None:
             context['query'] = query
         super().__init__(message, context)
-        self.error_code = "DB_ERROR_300"
+        self.error_code = ErrorCodes.DATABASE_GENERIC
 
 
 class VectorStoreError(DocuBotError):
-    """Raised when vector store operations fail."""
     def __init__(self, message: str, operation: Optional[str] = None):
         context = {"operation": operation} if operation is not None else {}
         super().__init__(message, context)
-        self.error_code = "DB_ERROR_400"
+        self.error_code = ErrorCodes.VECTOR_STORE
 
 
 class AIError(DocuBotError):
-    """Base exception for AI/ML related errors."""
     def __init__(self, message: str, model: Optional[str] = None):
         context = {"model": model} if model is not None else {}
         super().__init__(message, context)
-        self.error_code = "DB_ERROR_500"
+        self.error_code = ErrorCodes.AI_GENERIC
 
 
 class LLMError(AIError):
-    """Raised when LLM operations fail."""
     def __init__(self, message: str, model: Optional[str] = None,
                  prompt: Optional[str] = None):
         context = {}
@@ -123,11 +154,10 @@ class LLMError(AIError):
         if prompt is not None:
             context['prompt'] = prompt
         super().__init__(message, context)
-        self.error_code = "DB_ERROR_510"
+        self.error_code = ErrorCodes.LLM
 
 
 class EmbeddingError(AIError):
-    """Raised when embedding generation fails."""
     def __init__(self, message: str, model: Optional[str] = None,
                  text_length: Optional[int] = None):
         context = {}
@@ -136,11 +166,10 @@ class EmbeddingError(AIError):
         if text_length is not None:
             context['text_length'] = text_length
         super().__init__(message, context)
-        self.error_code = "DB_ERROR_520"
+        self.error_code = ErrorCodes.EMBEDDING
 
 
 class RAGError(AIError):
-    """Raised when RAG pipeline fails."""
     def __init__(self, message: str, stage: Optional[str] = None,
                  context_size: Optional[int] = None):
         context = {}
@@ -149,19 +178,56 @@ class RAGError(AIError):
         if context_size is not None:
             context['context_size'] = context_size
         super().__init__(message, context)
-        self.error_code = "DB_ERROR_530"
+        self.error_code = ErrorCodes.RAG
+
+
+class ModelManagementError(AIError):
+    def __init__(self, message: str, model_name: Optional[str] = None,
+                 action: Optional[str] = None):
+        context = {}
+        if model_name is not None:
+            context['model_name'] = model_name
+        if action is not None:
+            context['action'] = action
+        super().__init__(message, context)
+        self.error_code = ErrorCodes.MODEL_MANAGEMENT
+
+
+class RateLimitError(AIError):
+    def __init__(self, message: str, model: Optional[str] = None,
+                 reset_time: Optional[float] = None):
+        context = {}
+        if model is not None:
+            context['model'] = model
+        if reset_time is not None:
+            context['reset_time'] = reset_time
+        super().__init__(message, context)
+        self.error_code = ErrorCodes.RATE_LIMIT
+
+
+class ContextLengthError(LLMError):
+    def __init__(self, message: str, model: Optional[str] = None,
+                 current_length: Optional[int] = None,
+                 max_length: Optional[int] = None):
+        context = {}
+        if model is not None:
+            context['model'] = model
+        if current_length is not None:
+            context['current_length'] = current_length
+        if max_length is not None:
+            context['max_length'] = max_length
+        super().__init__(message, context)
+        self.error_code = ErrorCodes.CONTEXT_LENGTH
 
 
 class UIError(DocuBotError):
-    """Raised when UI operations fail."""
     def __init__(self, message: str, component: Optional[str] = None):
         context = {"component": component} if component is not None else {}
         super().__init__(message, context)
-        self.error_code = "DB_ERROR_600"
+        self.error_code = ErrorCodes.UI
 
 
 class ValidationError(DocuBotError):
-    """Raised when validation fails."""
     def __init__(self, message: str, field: Optional[str] = None,
                  value: Optional[Any] = None):
         context = {}
@@ -170,11 +236,10 @@ class ValidationError(DocuBotError):
         if value is not None:
             context['value'] = value
         super().__init__(message, context)
-        self.error_code = "DB_ERROR_700"
+        self.error_code = ErrorCodes.VALIDATION
 
 
 class ResourceError(DocuBotError):
-    """Raised when system resources are insufficient."""
     def __init__(self, message: str, resource_type: Optional[str] = None,
                  required: Optional[Any] = None, available: Optional[Any] = None):
         context = {}
@@ -185,11 +250,17 @@ class ResourceError(DocuBotError):
         if available is not None:
             context['available'] = available
         super().__init__(message, context)
-        self.error_code = "DB_ERROR_800"
+        self.error_code = ErrorCodes.RESOURCE
+
+
+class AuthenticationError(DocuBotError):
+    def __init__(self, message: str, resource: Optional[str] = None):
+        context = {"resource": resource} if resource else {}
+        super().__init__(message, context)
+        self.error_code = ErrorCodes.AUTHENTICATION
 
 
 class DiagnosticError(DocuBotError):
-    """Raised when diagnostic checks fail."""
     def __init__(self, message: str, check_name: Optional[str] = None,
                  details: Optional[Dict[str, Any]] = None):
         context = {}
@@ -198,24 +269,10 @@ class DiagnosticError(DocuBotError):
         if details:
             context.update(details)
         super().__init__(message, context)
-        self.error_code = "DB_ERROR_900"
+        self.error_code = ErrorCodes.DIAGNOSTIC
 
-
-# ============================================================================
-# ERROR HANDLING UTILITIES
-# ============================================================================
 
 def handle_error(error: Exception, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """
-    Handle an exception and return structured error information.
-    
-    Args:
-        error: The exception that occurred
-        context: Additional context about where the error occurred
-    
-    Returns:
-        Dictionary with structured error information
-    """
     error_type = type(error).__name__
     error_context = context or {}
     
@@ -239,6 +296,9 @@ def handle_error(error: Exception, context: Optional[Dict[str, Any]] = None) -> 
         'TimeoutError': "Operation timed out. Please try again or check your connection.",
         'ConnectionError': "Connection failed. Please check your network connection.",
         'RuntimeError': "Runtime error occurred. Please try again or contact support.",
+        'AuthenticationError': "Authentication failed. Please check your credentials and permissions.",
+        'RateLimitError': "Rate limit exceeded. Please wait before making additional requests.",
+        'ContextLengthError': "Context length exceeded. Please reduce the input size or use a model with larger context window.",
     }
     
     if isinstance(error, DocuBotError):
@@ -256,7 +316,7 @@ def handle_error(error: Exception, context: Optional[Dict[str, Any]] = None) -> 
         error_dict = {
             'success': False,
             'error_type': error_type,
-            'error_code': "DB_ERROR_000",
+            'error_code': ErrorCodes.GENERIC,
             'error_message': str(error),
             'user_message': user_messages.get(error_type, "An unexpected error occurred. Please try again."),
             'context': error_context,
@@ -268,17 +328,6 @@ def handle_error(error: Exception, context: Optional[Dict[str, Any]] = None) -> 
 
 
 def safe_execute(func: Callable[..., T], *args: Any, **kwargs: Any) -> tuple[bool, Union[T, Dict[str, Any]]]:
-    """
-    Execute a function safely with error handling.
-    
-    Args:
-        func: Function to execute
-        *args: Positional arguments for the function
-        **kwargs: Keyword arguments for the function
-    
-    Returns:
-        Tuple of (success, result_or_error)
-    """
     try:
         result = func(*args, **kwargs)
         return True, result
@@ -293,16 +342,42 @@ def safe_execute(func: Callable[..., T], *args: Any, **kwargs: Any) -> tuple[boo
         return False, error_result
 
 
-# ============================================================================
-# GRACEFUL DEGRADATION SYSTEM
-# ============================================================================
+class ErrorContext:
+    def __init__(self, operation: str, logger: Optional[logging.Logger] = None,
+                 raise_on_error: bool = True, collect_metrics: bool = True):
+        self.operation = operation
+        self.logger = logger or logging.getLogger(__name__)
+        self.raise_on_error = raise_on_error
+        self.collect_metrics = collect_metrics
+        self.error_occurred = False
+        self.error_info = None
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_val is not None:
+            self.error_occurred = True
+            error_info = handle_error(exc_val, {"operation": self.operation})
+            self.error_info = error_info
+            
+            log_error_with_context(
+                self.logger, 
+                exc_val,
+                {"operation": self.operation},
+                level="ERROR" if self.raise_on_error else "WARNING"
+            )
+            
+            if self.collect_metrics and hasattr(self.logger, 'metrics'):
+                self.logger.metrics.record_error(exc_val)
+            
+            return not self.raise_on_error
+        return False
+
 
 class GracefulDegradation:
-    """Implement graceful degradation for failing components."""
-    
     @staticmethod
     def fallback_document_processing(error: Exception, file_path: str, **kwargs) -> Dict[str, Any]:
-        """Fallback for document processing failures."""
         return {
             'success': False,
             'text': f"Document processing failed: {str(error)[:100]}",
@@ -321,7 +396,6 @@ class GracefulDegradation:
     
     @staticmethod
     def fallback_llm_response(error: Exception, query: str, **kwargs) -> Dict[str, Any]:
-        """Fallback for LLM failures."""
         return {
             'answer': f"I apologize, but I'm unable to process your query at the moment. The system encountered an error: {type(error).__name__}",
             'sources': [],
@@ -335,12 +409,10 @@ class GracefulDegradation:
     
     @staticmethod
     def fallback_embedding(error: Exception, text: str, dimensions: int = 384, **kwargs) -> list[float]:
-        """Fallback for embedding failures - returns zero vector."""
         return [0.0] * dimensions
     
     @staticmethod
     def fallback_database_operation(error: Exception, operation: str, **kwargs) -> Dict[str, Any]:
-        """Fallback for database failures."""
         return {
             'success': False,
             'operation': operation,
@@ -354,7 +426,6 @@ class GracefulDegradation:
     
     @staticmethod
     def fallback_vector_store_operation(error: Exception, operation: str, **kwargs) -> Dict[str, Any]:
-        """Fallback for vector store failures."""
         return {
             'success': False,
             'operation': operation,
@@ -366,30 +437,48 @@ class GracefulDegradation:
         }
 
 
+class FallbackRegistry:
+    _strategies = {}
+    
+    @classmethod
+    def register(cls, error_type: type, fallback_func: Callable):
+        cls._strategies[error_type] = fallback_func
+    
+    @classmethod
+    def get_fallback(cls, error: Exception):
+        fallback = cls._strategies.get(type(error))
+        if fallback:
+            return fallback
+        
+        for error_type, func in cls._strategies.items():
+            if isinstance(error, error_type):
+                return func
+        
+        return GracefulDegradation.fallback_llm_response
+
+
+FallbackRegistry.register(LLMError, GracefulDegradation.fallback_llm_response)
+FallbackRegistry.register(EmbeddingError, GracefulDegradation.fallback_embedding)
+FallbackRegistry.register(DatabaseError, GracefulDegradation.fallback_database_operation)
+FallbackRegistry.register(VectorStoreError, GracefulDegradation.fallback_vector_store_operation)
+FallbackRegistry.register(ExtractionError, GracefulDegradation.fallback_document_processing)
+
+
 def graceful_execute(
     primary_func: Callable[..., R], 
-    fallback_func: Callable[..., R], 
+    fallback_func: Optional[Callable[..., R]] = None, 
     *args: Any, 
     **kwargs: Any
 ) -> R:
-    """
-    Execute primary function with graceful degradation fallback.
-    
-    Args:
-        primary_func: Primary function to execute
-        fallback_func: Fallback function if primary fails
-        *args: Arguments for the functions
-        **kwargs: Keyword arguments for the functions
-    
-    Returns:
-        Result from either primary or fallback function
-    """
     logger = logging.getLogger(__name__)
     
     try:
         result = primary_func(*args, **kwargs)
         return result
     except Exception as error:
+        if fallback_func is None:
+            fallback_func = FallbackRegistry.get_fallback(error)
+        
         logger.warning(
             f"Primary function {primary_func.__name__} failed, using fallback: {error}",
             extra={
@@ -398,18 +487,19 @@ def graceful_execute(
                 'error_message': str(error)
             }
         )
+        
         try:
             return fallback_func(error, *args, **kwargs)
         except Exception as fallback_error:
             logger.error(
                 f"Fallback function also failed: {fallback_error}",
                 extra={
-                    'function': fallback_func.__name__,
+                    'function': fallback_func.__name__ if hasattr(fallback_func, '__name__') else 'unknown',
                     'error_type': type(fallback_error).__name__,
                     'error_message': str(fallback_error)
                 }
             )
-            # Return a minimal fallback
+            
             return {
                 'success': False,
                 'error': str(error),
@@ -420,16 +510,9 @@ def graceful_execute(
             }
 
 
-# ============================================================================
-# VALIDATION UTILITIES
-# ============================================================================
-
 class ConfigurationValidator:
-    """Validate configuration files and settings."""
-    
     @staticmethod
     def validate_app_config(config: Dict[str, Any]) -> tuple[bool, list[str]]:
-        """Validate main application configuration."""
         if not config:
             return False, ["Configuration is empty"]
         
@@ -439,10 +522,8 @@ class ConfigurationValidator:
         if missing_keys:
             return False, [f"Missing required section: {key}" for key in missing_keys]
         
-        # Validate nested structure
         issues = []
         
-        # Check AI configuration
         if 'ai' in config:
             ai_config = config['ai']
             if not isinstance(ai_config, dict):
@@ -453,7 +534,6 @@ class ConfigurationValidator:
                 if 'embeddings' not in ai_config:
                     issues.append("Missing 'ai.embeddings' configuration")
         
-        # Check document processing configuration
         if 'document_processing' in config:
             doc_config = config['document_processing']
             if not isinstance(doc_config, dict):
@@ -473,7 +553,6 @@ class ConfigurationValidator:
     
     @staticmethod
     def validate_file_path(path: Path) -> tuple[bool, Optional[str]]:
-        """Validate file path exists and is accessible."""
         if not isinstance(path, Path):
             path = Path(str(path))
         
@@ -484,7 +563,6 @@ class ConfigurationValidator:
             return False, f"Path is not a file: {path}"
         
         try:
-            # Test read access
             with open(path, 'rb') as f:
                 f.read(1)
             return True, None
@@ -495,12 +573,10 @@ class ConfigurationValidator:
     
     @staticmethod
     def validate_directory(path: Path) -> tuple[bool, Optional[str]]:
-        """Validate directory exists and is writable."""
         if not isinstance(path, Path):
             path = Path(str(path))
         
         if not path.exists():
-            # Try to create it
             try:
                 path.mkdir(parents=True, exist_ok=True)
             except Exception as error:
@@ -509,7 +585,6 @@ class ConfigurationValidator:
         if not path.is_dir():
             return False, f"Path is not a directory: {path}"
         
-        # Test write access
         test_file = path / ".write_test"
         try:
             test_file.write_text("test")
@@ -520,7 +595,6 @@ class ConfigurationValidator:
     
     @staticmethod
     def validate_model_config(config: Dict[str, Any]) -> tuple[bool, list[str]]:
-        """Validate model configuration."""
         if not config:
             return False, ["Model configuration is empty"]
         
@@ -544,24 +618,10 @@ class ConfigurationValidator:
         return len(issues) == 0, issues
 
 
-# ============================================================================
-# LOGGING INTEGRATION
-# ============================================================================
-
 def setup_error_logging(log_level: str = "INFO") -> logging.Logger:
-    """
-    Setup logging configuration for error handling.
-    
-    Args:
-        log_level: Logging level string
-    
-    Returns:
-        Configured logger instance
-    """
     logger = logging.getLogger("docubot.errors")
     
     if not logger.handlers:
-        # Create console handler
         console_handler = logging.StreamHandler()
         console_format = logging.Formatter(
             '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -582,15 +642,6 @@ def log_error_with_context(
     context: Optional[Dict[str, Any]] = None,
     level: str = "ERROR"
 ) -> None:
-    """
-    Log error with structured context information.
-    
-    Args:
-        logger: Logger instance
-        error: Exception to log
-        context: Additional context information
-        level: Log level
-    """
     log_context = context or {}
     error_info = {
         'error_type': type(error).__name__,
@@ -609,16 +660,9 @@ def log_error_with_context(
     log_method(f"Error occurred: {type(error).__name__}", extra=error_info)
 
 
-# ============================================================================
-# ERROR RECOVERY STRATEGIES
-# ============================================================================
-
 class ErrorRecovery:
-    """Strategies for recovering from different types of errors."""
-    
     @staticmethod
     def recover_from_database_error(error: Exception, max_retries: int = 3) -> tuple[bool, str]:
-        """Attempt to recover from database errors."""
         logger = logging.getLogger(__name__)
         
         error_msg = str(error).lower()
@@ -629,7 +673,6 @@ class ErrorRecovery:
         
         if "connection" in error_msg or "locked" in error_msg:
             logger.warning("Attempting to recover from connection/locked error")
-            # In a real implementation, you would attempt to reconnect
             return True, "Connection issue detected, attempting recovery"
         
         if "syntax" in error_msg or "table" in error_msg:
@@ -640,7 +683,6 @@ class ErrorRecovery:
     
     @staticmethod
     def recover_from_resource_error(error: ResourceError) -> tuple[bool, str]:
-        """Attempt to recover from resource errors."""
         resource_type = error.context.get('resource_type', 'unknown')
         
         if resource_type == 'memory':
@@ -656,11 +698,9 @@ class ErrorRecovery:
     
     @staticmethod
     def should_retry(error: Exception, attempt: int, max_attempts: int = 3) -> bool:
-        """Determine if an operation should be retried."""
         if attempt >= max_attempts:
             return False
         
-        # Don't retry certain error types
         no_retry_errors = [
             'UnsupportedFormatError',
             'ValidationError',
@@ -676,33 +716,24 @@ class ErrorRecovery:
         if error_type in no_retry_errors:
             return False
         
-        # Don't retry permission errors
         if isinstance(error, PermissionError):
             return False
         
-        # Don't retry disk full errors
-        if "disk full" in str(error).lower():
+        error_msg = str(error).lower()
+        if "disk full" in error_msg:
             return False
         
-        # Don't retry invalid file format errors
-        if "unsupported" in str(error).lower() or "invalid format" in str(error).lower():
+        if "unsupported" in error_msg or "invalid format" in error_msg:
             return False
         
         return True
     
     @staticmethod
     def get_retry_delay(attempt: int, base_delay: float = 1.0) -> float:
-        """Calculate delay for retry with exponential backoff."""
         return base_delay * (2 ** (attempt - 1))
 
 
-# ============================================================================
-# ERROR METRICS AND ANALYTICS
-# ============================================================================
-
 class ErrorMetrics:
-    """Track and analyze error metrics."""
-    
     def __init__(self):
         self.error_counts = {}
         self.error_timestamps = []
@@ -710,19 +741,16 @@ class ErrorMetrics:
         self.recovery_successes = 0
         
     def record_error(self, error: Exception) -> None:
-        """Record an error occurrence."""
         error_type = type(error).__name__
         self.error_counts[error_type] = self.error_counts.get(error_type, 0) + 1
         self.error_timestamps.append(datetime.now().isoformat())
     
     def record_recovery(self, success: bool) -> None:
-        """Record a recovery attempt."""
         self.recovery_attempts += 1
         if success:
             self.recovery_successes += 1
     
     def get_error_stats(self) -> Dict[str, Any]:
-        """Get error statistics."""
         total_errors = sum(self.error_counts.values())
         
         return {
@@ -738,11 +766,9 @@ class ErrorMetrics:
         }
     
     def get_error_frequency(self, window_minutes: int = 60) -> float:
-        """Calculate error frequency in errors per minute."""
         if not self.error_timestamps:
             return 0.0
         
-        # Get errors within time window
         window_start = datetime.now().timestamp() - (window_minutes * 60)
         recent_errors = 0
         
@@ -757,16 +783,9 @@ class ErrorMetrics:
         return recent_errors / window_minutes if window_minutes > 0 else 0.0
 
 
-# ============================================================================
-# ERROR FILTERING AND CLASSIFICATION
-# ============================================================================
-
 class ErrorClassifier:
-    """Classify errors for appropriate handling."""
-    
     @staticmethod
     def classify_error(error: Exception) -> Dict[str, bool]:
-        """Classify an error into categories."""
         error_type = type(error).__name__
         error_msg = str(error).lower()
         
@@ -780,38 +799,33 @@ class ErrorClassifier:
             'is_permanent': False,
             'requires_user_intervention': False,
             'can_retry': True,
-            'severity': 'medium'  # low, medium, high, critical
+            'severity': 'medium'
         }
         
-        # Connection errors
         if any(term in error_msg for term in ['connection', 'timeout', 'network', 'socket']):
             classification['is_connection_error'] = True
             classification['is_temporary'] = True
             classification['can_retry'] = True
             classification['severity'] = 'medium'
         
-        # Resource errors
         elif any(term in error_msg for term in ['memory', 'disk', 'space', 'resource', 'capacity']):
             classification['is_resource_error'] = True
             classification['requires_user_intervention'] = True
             classification['can_retry'] = False
             classification['severity'] = 'high'
         
-        # Configuration errors
         elif any(term in error_msg for term in ['config', 'setting', 'parameter', 'option']):
             classification['is_configuration_error'] = True
             classification['requires_user_intervention'] = True
             classification['can_retry'] = False
             classification['severity'] = 'medium'
         
-        # User errors
         elif any(term in error_msg for term in ['invalid', 'unsupported', 'missing', 'required']):
             classification['is_user_error'] = True
             classification['requires_user_intervention'] = True
             classification['can_retry'] = False
             classification['severity'] = 'low'
         
-        # System errors
         elif error_type in ['OSError', 'IOError', 'MemoryError', 'RuntimeError']:
             classification['is_system_error'] = True
             classification['is_permanent'] = True
@@ -819,7 +833,6 @@ class ErrorClassifier:
             classification['can_retry'] = False
             classification['severity'] = 'critical'
         
-        # Permission errors
         elif error_type == 'PermissionError':
             classification['is_system_error'] = True
             classification['requires_user_intervention'] = True
@@ -830,7 +843,6 @@ class ErrorClassifier:
     
     @staticmethod
     def get_recommended_action(error: Exception) -> str:
-        """Get recommended action for an error."""
         classification = ErrorClassifier.classify_error(error)
         
         if classification['is_connection_error']:
@@ -849,45 +861,64 @@ class ErrorClassifier:
             return "Please try again or contact support if the problem persists"
 
 
-# ============================================================================
-# TESTING AND VALIDATION
-# ============================================================================
+class ErrorReporter:
+    @staticmethod
+    def report_to_sentry(error: Exception, context: Dict[str, Any]):
+        try:
+            import sentry_sdk
+            with sentry_sdk.push_scope() as scope:
+                for key, value in context.items():
+                    scope.set_extra(key, value)
+                sentry_sdk.capture_exception(error)
+        except ImportError:
+            pass
+    
+    @staticmethod
+    def create_error_report(error_info: Dict[str, Any]) -> Dict[str, Any]:
+        return {
+            "error_id": str(uuid.uuid4()),
+            "timestamp": datetime.now().isoformat(),
+            "application": "DocuBot",
+            "version": "1.0.0",
+            "environment": "production",
+            "error_details": error_info,
+            "system_info": {
+                "python_version": sys.version,
+                "platform": sys.platform,
+                "hostname": socket.gethostname() if hasattr(socket, 'gethostname') else "unknown"
+            }
+        }
+
 
 if __name__ == "__main__":
-    """Test the exception handling system."""
-    
-    # Setup test logging
     test_logger = setup_error_logging("DEBUG")
     
     print("Testing DocuBot Exception System")
     print("=" * 50)
     
-    # Test 1: Custom exceptions
     print("\n1. Testing custom exceptions:")
     try:
         test_exception = UnsupportedFormatError("xyz", "/path/to/file.xyz")
-        print(f"   ✓ Exception created: {test_exception}")
-        print(f"   ✓ Error code: {test_exception.error_code}")
-        print(f"   ✓ Context: {test_exception.context}")
-        print(f"   ✓ Message: {str(test_exception)}")
+        print(f"   Exception created: {test_exception}")
+        print(f"   Error code: {test_exception.error_code}")
+        print(f"   Context: {test_exception.context}")
+        print(f"   Message: {str(test_exception)}")
     except Exception as e:
-        print(f"   ✗ Exception creation failed: {e}")
+        print(f"   Exception creation failed: {e}")
         import traceback
         traceback.print_exc()
     
-    # Test 2: Error handling
     print("\n2. Testing error handling:")
     try:
         success, result = safe_execute(lambda x: 1 / x, 0)
-        print(f"   ✓ Error handling worked: success={success}")
-        print(f"   ✓ Error result type: {type(result)}")
-        print(f"   ✓ Error keys: {list(result.keys()) if isinstance(result, dict) else 'N/A'}")
+        print(f"   Error handling worked: success={success}")
+        print(f"   Error result type: {type(result)}")
+        print(f"   Error keys: {list(result.keys()) if isinstance(result, dict) else 'N/A'}")
     except Exception as e:
-        print(f"   ✗ Error handling failed: {e}")
+        print(f"   Error handling failed: {e}")
         import traceback
         traceback.print_exc()
     
-    # Test 3: Graceful degradation
     print("\n3. Testing graceful degradation:")
     try:
         def failing_function():
@@ -898,31 +929,27 @@ if __name__ == "__main__":
             GracefulDegradation.fallback_llm_response,
             "test query"
         )
-        print(f"   ✓ Graceful execution result type: {type(result)}")
-        print(f"   ✓ Fallback used: {result.get('fallback_used', 'unknown')}")
-        print(f"   ✓ Degraded mode: {result.get('degraded_mode', 'unknown')}")
+        print(f"   Graceful execution result type: {type(result)}")
+        print(f"   Fallback used: {result.get('fallback_used', 'unknown')}")
+        print(f"   Degraded mode: {result.get('degraded_mode', 'unknown')}")
     except Exception as e:
-        print(f"   ✗ Graceful degradation failed: {e}")
+        print(f"   Graceful degradation failed: {e}")
         import traceback
         traceback.print_exc()
     
-    # Test 4: Validation
     print("\n4. Testing validation:")
     try:
         validator = ConfigurationValidator()
         
-        # Test file path validation
         import tempfile
         with tempfile.NamedTemporaryFile() as tmp:
             valid, message = validator.validate_file_path(Path(tmp.name))
-            print(f"   ✓ File validation: {valid} - {message or 'OK'}")
+            print(f"   File validation: {valid} - {message or 'OK'}")
         
-        # Test directory validation
         with tempfile.TemporaryDirectory() as tmpdir:
             valid, message = validator.validate_directory(Path(tmpdir))
-            print(f"   ✓ Directory validation: {valid} - {message or 'OK'}")
+            print(f"   Directory validation: {valid} - {message or 'OK'}")
         
-        # Test config validation
         config = {
             "app": {"name": "test"},
             "document_processing": {
@@ -937,23 +964,22 @@ if __name__ == "__main__":
             "storage": {"path": "/tmp"}
         }
         valid, issues = validator.validate_app_config(config)
-        print(f"   ✓ Config validation: {valid} - Issues: {issues}")
+        print(f"   Config validation: {valid} - Issues: {issues}")
         
     except Exception as e:
-        print(f"   ✗ Validation failed: {e}")
+        print(f"   Validation failed: {e}")
         import traceback
         traceback.print_exc()
     
-    # Test 5: Error classification
     print("\n5. Testing error classification:")
     try:
         classifier = ErrorClassifier()
         test_error = ConnectionError("Connection refused")
         classification = classifier.classify_error(test_error)
-        print(f"   ✓ Error classification: {classification}")
-        print(f"   ✓ Recommended action: {classifier.get_recommended_action(test_error)}")
+        print(f"   Error classification: {classification}")
+        print(f"   Recommended action: {classifier.get_recommended_action(test_error)}")
     except Exception as e:
-        print(f"   ✗ Error classification failed: {e}")
+        print(f"   Error classification failed: {e}")
         import traceback
         traceback.print_exc()
     

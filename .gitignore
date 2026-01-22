@@ -91,6 +91,7 @@ smart_validation_report.json
 *progress_summary*.json
 *requirements_analysis*.json
 *dependency_report*.json
+*task_details*.json
 
 
 # ============================================

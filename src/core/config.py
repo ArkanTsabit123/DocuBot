@@ -67,7 +67,7 @@ class AppConfig:
     ocr_enabled: bool = True
     ocr_languages: List[str] = field(default_factory=lambda: ["eng", "ind"])
     
-    # LLM Configuration (P1.8.2 requirement)
+    # LLM Configuration
     llm_provider: str = "ollama"
     llm_model: str = "llama2:7b"
     llm_temperature: float = 0.1
@@ -100,7 +100,7 @@ class AppConfig:
         }
     })
     
-    # Embedding Configuration (P1.9.1 & P1.9.2 requirements)
+    # Embedding Configuration
     embedding_model: str = "all-MiniLM-L6-v2"
     embedding_dimensions: int = 384
     embedding_device: str = "cpu"
@@ -146,7 +146,7 @@ class AppConfig:
     ui_language: str = "en"
     ui_font_size: int = 12
     enable_animations: bool = True
-    auto_save_interval: int = 60  # seconds
+    auto_save_interval: int = 60
     
     # Storage Configuration
     max_documents: int = 10000
@@ -168,13 +168,9 @@ class AppConfig:
     
     def __post_init__(self):
         """Initialize platform detection and directories after dataclass creation."""
-        # Detect platform
         self.platform = self._detect_platform()
-        
-        # Set platform-specific data directory
         self.data_dir = self.get_data_dir()
         
-        # Create all subdirectories
         self.models_dir = self.data_dir / "models"
         self.documents_dir = self.data_dir / "documents"
         self.database_dir = self.data_dir / "database"
@@ -183,7 +179,6 @@ class AppConfig:
         self.config_dir = self.data_dir / "config"
         self.cache_dir = self.data_dir / "cache"
         
-        # Ensure directories exist
         self.ensure_directories()
     
     def _detect_platform(self) -> PlatformType:
@@ -200,12 +195,7 @@ class AppConfig:
             return PlatformType.UNKNOWN
     
     def get_data_dir(self) -> Path:
-        """
-        Get platform-specific data directory.
-        
-        Returns:
-            Path to data directory
-        """
+        """Get platform-specific data directory."""
         home = Path.home()
         
         if self.platform == PlatformType.WINDOWS:
@@ -225,8 +215,32 @@ class AppConfig:
             else:
                 return home / ".local" / "share" / "docubot"
         
-        else:  # UNKNOWN or fallback
+        else:
             return home / ".docubot"
+    
+    def setup_crossplatform_paths(self) -> Path:
+        """Setup cross-platform paths for checker compatibility."""
+        system = platform.system().lower()
+        
+        if system == "windows":
+            base = Path(os.environ.get('APPDATA', Path.home() / 'AppData' / 'Roaming'))
+        elif system == "darwin":
+            base = Path.home() / "Library" / "Application Support"
+        else:
+            base = Path.home() / ".local" / "share"
+        
+        app_dir = base / "DocuBot"
+        
+        self.data_dir = app_dir
+        self.models_dir = app_dir / "models"
+        self.documents_dir = app_dir / "documents"
+        self.database_dir = app_dir / "database"
+        self.logs_dir = app_dir / "logs"
+        self.exports_dir = app_dir / "exports"
+        self.config_dir = app_dir / "config"
+        self.cache_dir = app_dir / "cache"
+        
+        return app_dir
     
     def ensure_directories(self) -> None:
         """Create all required application directories."""
@@ -289,7 +303,6 @@ class AppConfig:
         """Validate configuration values."""
         issues = []
         
-        # Check required directories
         required_dirs = [
             self.data_dir,
             self.models_dir,
@@ -302,21 +315,18 @@ class AppConfig:
             if not directory.exists():
                 issues.append(f"Missing directory: {directory}")
         
-        # Validate document processing
         if self.chunk_size < 100 or self.chunk_size > 2000:
             issues.append(f"Invalid chunk_size: {self.chunk_size} (should be 100-2000)")
         
         if self.chunk_overlap < 0 or self.chunk_overlap >= self.chunk_size:
             issues.append(f"Invalid chunk_overlap: {self.chunk_overlap} (should be 0 to {self.chunk_size-1})")
         
-        # Validate LLM configuration
         if self.llm_temperature < 0 or self.llm_temperature > 2:
             issues.append(f"Invalid llm_temperature: {self.llm_temperature} (should be 0.0-2.0)")
         
         if self.llm_model not in self.supported_llm_models:
             issues.append(f"Unsupported LLM model: {self.llm_model}")
         
-        # Validate embedding configuration
         if self.embedding_model not in self.supported_embedding_models:
             issues.append(f"Unsupported embedding model: {self.embedding_model}")
         
@@ -334,7 +344,6 @@ class ConfigManager:
     def __init__(self, config_path: Optional[Path] = None):
         self.config_path = config_path
         if not self.config_path:
-            # Create config instance first to get platform-specific path
             temp_config = AppConfig()
             self.config_path = temp_config.config_dir / "app_config.yaml"
         
@@ -348,13 +357,10 @@ class ConfigManager:
                 with open(self.config_path, 'r', encoding='utf-8') as f:
                     yaml_config = yaml.safe_load(f) or {}
                 
-                # Load app section if exists
                 app_config = yaml_config.get('app', {})
                 
-                # Update configuration attributes
                 for key, value in app_config.items():
                     if hasattr(self.config, key):
-                        # Handle nested dictionaries (like supported_llm_models)
                         if isinstance(value, dict) and key in ['supported_llm_models', 'supported_embedding_models']:
                             current_value = getattr(self.config, key, {})
                             current_value.update(value)
@@ -371,10 +377,8 @@ class ConfigManager:
     def save(self) -> bool:
         """Save configuration to YAML file."""
         try:
-            # Ensure config directory exists
             self.config_path.parent.mkdir(parents=True, exist_ok=True)
             
-            # Prepare configuration dictionary
             config_dict = {
                 'app': {
                     'name': self.config.app_name,
@@ -459,7 +463,6 @@ class ConfigManager:
             return False
 
 
-# Global configuration instance
 default_config_manager = ConfigManager()
 
 
@@ -474,3 +477,58 @@ def init_config() -> AppConfig:
     config.ensure_directories()
     default_config_manager.save()
     return config
+
+def setup_crossplatform_environment():
+    """Setup complete cross-platform environment for DocuBot."""
+    from src.core.config import setup_crossplatform_dirs
+    return setup_crossplatform_dirs()
+
+def setup_crossplatform_dirs() -> Dict[str, Path]:
+    """
+    Setup cross-platform data directories.
+    Returns dictionary of all paths created.
+    """
+    import platform
+    from datetime import datetime
+    
+    system = platform.system().lower()
+    
+    if system == "windows":
+        base = Path(os.environ.get('APPDATA', Path.home() / 'AppData' / 'Roaming'))
+        app_dir = base / "DocuBot"
+    elif system == "darwin":
+        app_dir = Path.home() / "Library" / "Application Support" / "DocuBot"
+    elif system == "linux":
+        xdg_data_home = os.environ.get('XDG_DATA_HOME', '')
+        if xdg_data_home:
+            app_dir = Path(xdg_data_home) / "docubot"
+        else:
+            app_dir = Path.home() / ".local" / "share" / "docubot"
+    else:
+        app_dir = Path.home() / ".docubot"
+    
+    directories = {
+        'data': app_dir,
+        'models': app_dir / "models",
+        'documents': app_dir / "documents",
+        'database': app_dir / "database",
+        'logs': app_dir / "logs",
+        'exports': app_dir / "exports",
+        'config': app_dir / "config",
+        'cache': app_dir / "cache",
+        'temp': app_dir / "temp",
+        'backups': app_dir / "backups"
+    }
+    
+    print(f"Setting up cross-platform directories on {system}...")
+    for name, path in directories.items():
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            marker = path / ".dir_created"
+            if not marker.exists():
+                marker.write_text(f"Created by DocuBot on {platform.system()} at {datetime.now()}")
+            print(f"Created directory: {path}")
+        except Exception as e:
+            print(f"Failed to create directory {path}: {e}")
+    
+    return directories

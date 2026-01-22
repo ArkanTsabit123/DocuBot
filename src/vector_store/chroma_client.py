@@ -1,22 +1,24 @@
 # docubot/src/vector_store/chroma_client.py
 
 """
-ChromaDB Vector Store Client for DocuBot
+ChromaDB Vector Store Client for DocuBot.
+Professional implementation with CRUD operations and search capabilities.
 """
 
 import chromadb
-from chromadb.config import Settings
-from pathlib import Path
-from typing import List, Dict, Any, Optional, Union, Tuple
 import logging
-from datetime import datetime
+import numpy as np
 import uuid
+from chromadb.config import Settings
+from datetime import datetime
+from pathlib import Path
+from typing import List, Dict, Any, Optional, Tuple, Union
 
-# Fix: Import from correct location
+# Import configuration constants
 try:
     from ..core.constants import DATABASE_DIR, VECTOR_DB_NAME
 except ImportError:
-    # Fallback if constants not available
+    # Fallback configuration
     DATABASE_DIR = Path.home() / ".docubot" / "database"
     VECTOR_DB_NAME = "chroma"
 
@@ -24,11 +26,13 @@ logger = logging.getLogger(__name__)
 
 
 class ChromaClient:
-    """ChromaDB vector store client"""
+    """ChromaDB vector store client for document storage and retrieval."""
     
-    def __init__(self, persist_directory: Optional[Path] = None, collection_name: str = "documents"):
+    def __init__(self, 
+                 persist_directory: Optional[Path] = None, 
+                 collection_name: str = "documents") -> None:
         """
-        Initialize ChromaDB client.
+        Initialize ChromaDB client with persistent storage.
         
         Args:
             persist_directory: Directory to persist ChromaDB data
@@ -37,9 +41,9 @@ class ChromaClient:
         if persist_directory is None:
             persist_directory = DATABASE_DIR / VECTOR_DB_NAME
         
-        self.persist_directory = persist_directory
+        self.persist_directory = Path(persist_directory)
         self.collection_name = collection_name
-        self.default_top_k = 5  # Default top_k parameter
+        self.default_top_k = 5
         
         self.persist_directory.mkdir(parents=True, exist_ok=True)
         
@@ -47,7 +51,8 @@ class ChromaClient:
             path=str(self.persist_directory),
             settings=Settings(
                 anonymized_telemetry=False,
-                allow_reset=True
+                allow_reset=True,
+                is_persistent=True
             )
         )
         
@@ -57,30 +62,32 @@ class ChromaClient:
     
     def _get_or_create_collection(self) -> chromadb.Collection:
         """
-        Get existing collection or create new one.
+        Retrieve existing collection or create new collection.
         
         Returns:
-            ChromaDB collection
+            ChromaDB collection instance
         """
         try:
-            # Try to get existing collection
             collection = self.client.get_collection(name=self.collection_name)
             logger.debug(f"Using existing collection: {self.collection_name}")
             return collection
         except ValueError:
-            # Create new collection if it doesn't exist
             collection = self.client.create_collection(
                 name=self.collection_name,
-                metadata={"description": "DocuBot document embeddings"}
+                metadata={
+                    "description": "DocuBot document embeddings",
+                    "created_at": datetime.now().isoformat(),
+                    "created_by": "ChromaClient"
+                }
             )
             logger.info(f"Created new collection: {self.collection_name}")
             return collection
     
     def add_documents(self,
-                     texts: List[str],
-                     embeddings: Optional[List[List[float]]] = None,
-                     metadatas: Optional[List[Dict[str, Any]]] = None,
-                     ids: Optional[List[str]] = None) -> List[str]:
+                      texts: List[str],
+                      embeddings: Optional[List[List[float]]] = None,
+                      metadatas: Optional[List[Dict[str, Any]]] = None,
+                      ids: Optional[List[str]] = None) -> List[str]:
         """
         Add documents to vector store.
         
@@ -88,10 +95,14 @@ class ChromaClient:
             texts: List of text documents
             embeddings: Optional pre-computed embeddings
             metadatas: Optional metadata for each document
-            ids: Optional custom IDs for documents
+            ids: Optional custom document IDs
             
         Returns:
             List of document IDs
+            
+        Raises:
+            ValueError: If inputs are invalid
+            RuntimeError: If document addition fails
         """
         if not texts:
             return []
@@ -102,17 +113,19 @@ class ChromaClient:
         if metadatas is None:
             metadatas = [{} for _ in range(len(texts))]
         
-        # Ensure metadatas has same length as texts
         if len(metadatas) != len(texts):
-            metadatas = [{} for _ in range(len(texts))]
+            raise ValueError(f"Metadatas length ({len(metadatas)}) must match texts length ({len(texts)})")
+        
+        if embeddings is not None and len(embeddings) != len(texts):
+            raise ValueError(f"Embeddings length ({len(embeddings)}) must match texts length ({len(texts)})")
         
         timestamp = datetime.now().isoformat()
         for metadata in metadatas:
             metadata['added_at'] = metadata.get('added_at', timestamp)
+            metadata['doc_length'] = metadata.get('doc_length', len(texts[metadatas.index(metadata)]))
         
         try:
             if embeddings:
-                # Add with embeddings
                 self.collection.add(
                     embeddings=embeddings,
                     documents=texts,
@@ -120,111 +133,78 @@ class ChromaClient:
                     ids=ids
                 )
             else:
-                # Add without embeddings (ChromaDB will compute)
                 self.collection.add(
                     documents=texts,
                     metadatas=metadatas,
                     ids=ids
                 )
             
-            logger.info(f"Added {len(texts)} documents to vector store")
+            logger.info(f"Added {len(texts)} documents to collection '{self.collection_name}'")
             return ids
             
-        except Exception as e:
-            logger.error(f"Error adding documents: {e}")
-            raise
+        except Exception as error:
+            logger.error(f"Failed to add documents: {error}")
+            raise RuntimeError(f"Document addition failed: {error}")
     
     def search(self,
-              query: str,
-              n_results: int = 5,
-              where: Optional[Dict[str, Any]] = None,
-              where_document: Optional[Dict[str, Any]] = None,
-              include: List[str] = None) -> Dict[str, Any]:
+               query: str,
+               n_results: int = 5,
+               where: Optional[Dict[str, Any]] = None,
+               where_document: Optional[Dict[str, Any]] = None,
+               include: Optional[List[str]] = None) -> Dict[str, Any]:
         """
-        Search for similar documents.
+        Search for similar documents using text query.
         
         Args:
             query: Search query text
             n_results: Number of results to return
-            where: Filter by metadata
+            where: Filter by metadata conditions
             where_document: Filter by document content
-            include: What to include in results
+            include: Fields to include in response
             
         Returns:
-            Search results
+            Dictionary containing search results
         """
         if include is None:
             include = ["documents", "metadatas", "distances"]
         
+        if not query or not query.strip():
+            return self._empty_search_result("Empty query")
+        
         try:
-            # Handle empty query
-            if not query or not query.strip():
-                return {
-                    'ids': [],
-                    'documents': [],
-                    'metadatas': [],
-                    'distances': [],
-                    'count': 0,
-                    'error': 'Empty query'
-                }
-            
             results = self.collection.query(
-                query_texts=[query],
+                query_texts=[query.strip()],
                 n_results=n_results,
                 where=where,
                 where_document=where_document,
                 include=include
             )
             
-            # Format results safely
-            formatted_results = {
-                'ids': results.get('ids', [[]])[0] if results.get('ids') else [],
-                'documents': results.get('documents', [[]])[0] if results.get('documents') else [],
-                'metadatas': results.get('metadatas', [[]])[0] if results.get('metadatas') else [],
-                'distances': results.get('distances', [[]])[0] if results.get('distances') else [],
-                'count': len(results.get('ids', [[]])[0]) if results.get('ids') else 0
-            }
+            return self._format_search_results(results)
             
-            logger.debug(f"Search returned {formatted_results['count']} results")
-            return formatted_results
-            
-        except Exception as e:
-            logger.error(f"Error searching: {e}")
-            return {
-                'ids': [],
-                'documents': [],
-                'metadatas': [],
-                'distances': [],
-                'count': 0,
-                'error': str(e)
-            }
+        except Exception as error:
+            logger.error(f"Search failed: {error}")
+            return self._empty_search_result(str(error))
     
     def search_with_embeddings(self,
-                              query_embeddings: List[List[float]],
-                              n_results: int = 5,
-                              where: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                               query_embeddings: List[List[float]],
+                               n_results: int = 5,
+                               where: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """
         Search using pre-computed embeddings.
         
         Args:
-            query_embeddings: Query embeddings
+            query_embeddings: List of query embedding vectors
             n_results: Number of results to return
-            where: Filter by metadata
+            where: Filter by metadata conditions
             
         Returns:
-            Search results
+            Dictionary containing search results
         """
+        if not query_embeddings:
+            return self._empty_search_result("No query embeddings provided")
+        
         try:
-            if not query_embeddings:
-                return {
-                    'ids': [],
-                    'documents': [],
-                    'metadatas': [],
-                    'distances': [],
-                    'count': 0,
-                    'error': 'No query embeddings provided'
-                }
-            
             results = self.collection.query(
                 query_embeddings=query_embeddings,
                 n_results=n_results,
@@ -232,37 +212,60 @@ class ChromaClient:
                 include=["documents", "metadatas", "distances"]
             )
             
-            # Format results safely
-            formatted_results = {
-                'ids': results.get('ids', [[]])[0] if results.get('ids') else [],
-                'documents': results.get('documents', [[]])[0] if results.get('documents') else [],
-                'metadatas': results.get('metadatas', [[]])[0] if results.get('metadatas') else [],
-                'distances': results.get('distances', [[]])[0] if results.get('distances') else [],
-                'count': len(results.get('ids', [[]])[0]) if results.get('ids') else 0
-            }
+            return self._format_search_results(results)
             
-            return formatted_results
+        except Exception as error:
+            logger.error(f"Embedding search failed: {error}")
+            return self._empty_search_result(str(error))
+    
+    def similarity_search(self,
+                         query: str,
+                         k: Optional[int] = None,
+                         threshold: float = 0.7) -> List[Tuple[str, float]]:
+        """
+        Perform similarity search with score threshold filtering.
+        
+        Args:
+            query: Search query text
+            k: Number of results to return (uses default if None)
+            threshold: Minimum similarity score (0-1)
             
-        except Exception as e:
-            logger.error(f"Error searching with embeddings: {e}")
-            return {
-                'ids': [],
-                'documents': [],
-                'metadatas': [],
-                'distances': [],
-                'count': 0,
-                'error': str(e)
-            }
+        Returns:
+            List of (document, similarity_score) tuples
+        """
+        if k is None:
+            k = self.default_top_k
+        
+        if threshold < 0 or threshold > 1:
+            raise ValueError("Threshold must be between 0 and 1")
+        
+        results = self.search(query=query, n_results=k)
+        
+        if results.get('error'):
+            logger.warning(f"Search error: {results['error']}")
+            return []
+        
+        documents = results.get('documents', [])
+        distances = results.get('distances', [])
+        
+        filtered_results = []
+        for doc, dist in zip(documents, distances):
+            similarity = self._distance_to_similarity(dist)
+            if similarity >= threshold:
+                filtered_results.append((doc, similarity))
+        
+        logger.debug(f"Similarity search: {len(filtered_results)} results after threshold {threshold}")
+        return filtered_results
     
     def get_document(self, doc_id: str) -> Optional[Dict[str, Any]]:
         """
-        Get document by ID.
+        Retrieve document by ID.
         
         Args:
-            doc_id: Document ID
+            doc_id: Document identifier
             
         Returns:
-            Document data or None
+            Document data dictionary or None if not found
         """
         try:
             results = self.collection.get(
@@ -277,10 +280,11 @@ class ChromaClient:
                     'metadata': results.get('metadatas', [None])[0]
                 }
             
+            logger.debug(f"Document not found: {doc_id}")
             return None
             
-        except Exception as e:
-            logger.error(f"Error getting document {doc_id}: {e}")
+        except Exception as error:
+            logger.error(f"Failed to retrieve document {doc_id}: {error}")
             return None
     
     def update_document(self,
@@ -289,16 +293,16 @@ class ChromaClient:
                        metadata: Optional[Dict[str, Any]] = None,
                        embedding: Optional[List[float]] = None) -> bool:
         """
-        Update document in vector store.
+        Update existing document in vector store.
         
         Args:
-            doc_id: Document ID
-            text: New text
-            metadata: New metadata
-            embedding: New embedding
+            doc_id: Document identifier
+            text: Updated document text
+            metadata: Updated metadata
+            embedding: Updated embedding vector
             
         Returns:
-            True if successful
+            True if update successful, False otherwise
         """
         try:
             update_data = {}
@@ -307,23 +311,22 @@ class ChromaClient:
                 update_data['documents'] = [text]
             
             if metadata is not None:
+                metadata['updated_at'] = datetime.now().isoformat()
                 update_data['metadatas'] = [metadata]
             
             if embedding is not None:
                 update_data['embeddings'] = [embedding]
             
-            if update_data:
-                self.collection.update(
-                    ids=[doc_id],
-                    **update_data
-                )
-                logger.debug(f"Updated document: {doc_id}")
-                return True
+            if not update_data:
+                logger.warning("No update data provided")
+                return False
             
-            return False
+            self.collection.update(ids=[doc_id], **update_data)
+            logger.info(f"Updated document: {doc_id}")
+            return True
             
-        except Exception as e:
-            logger.error(f"Error updating document {doc_id}: {e}")
+        except Exception as error:
+            logger.error(f"Failed to update document {doc_id}: {error}")
             return False
     
     def delete_documents(self, doc_ids: List[str]) -> bool:
@@ -331,70 +334,153 @@ class ChromaClient:
         Delete documents from vector store.
         
         Args:
-            doc_ids: List of document IDs to delete
+            doc_ids: List of document identifiers to delete
             
         Returns:
-            True if successful
+            True if deletion successful, False otherwise
         """
+        if not doc_ids:
+            return True
+        
         try:
-            if not doc_ids:
-                return True
-            
             self.collection.delete(ids=doc_ids)
-            logger.info(f"Deleted {len(doc_ids)} documents from vector store")
+            logger.info(f"Deleted {len(doc_ids)} documents")
             return True
             
-        except Exception as e:
-            logger.error(f"Error deleting documents: {e}")
+        except Exception as error:
+            logger.error(f"Failed to delete documents: {error}")
             return False
     
     def get_collection_info(self) -> Dict[str, Any]:
         """
-        Get information about the collection.
+        Retrieve collection information and statistics.
         
         Returns:
-            Collection information
+            Dictionary containing collection metadata and statistics
         """
         try:
             count = self.collection.count()
-            
-            # Get a sample document
-            sample = self.collection.get(limit=1)
             
             return {
                 'name': self.collection_name,
                 'document_count': count,
                 'has_documents': count > 0,
-                'sample_document': sample.get('documents', [None])[0] if sample.get('documents') else None,
                 'persist_directory': str(self.persist_directory),
-                'collection_metadata': self.collection.metadata
+                'collection_metadata': self.collection.metadata,
+                'default_top_k': self.default_top_k
             }
             
-        except Exception as e:
-            logger.error(f"Error getting collection info: {e}")
+        except Exception as error:
+            logger.error(f"Failed to retrieve collection info: {error}")
             return {
                 'name': self.collection_name,
-                'error': str(e),
+                'error': str(error),
                 'persist_directory': str(self.persist_directory)
             }
     
     def reset_collection(self) -> bool:
         """
-        Reset/clear the collection.
+        Delete and recreate collection.
         
         Returns:
-            True if successful
+            True if reset successful, False otherwise
         """
         try:
             self.client.delete_collection(name=self.collection_name)
-            # Recreate collection
             self.collection = self._get_or_create_collection()
-            logger.info(f"Collection {self.collection_name} has been reset")
+            logger.info(f"Collection '{self.collection_name}' has been reset")
             return True
             
-        except Exception as e:
-            logger.error(f"Error resetting collection: {e}")
+        except Exception as error:
+            logger.error(f"Failed to reset collection: {error}")
             return False
+    
+    def create_new_collection(self, 
+                            name: str, 
+                            metadata: Optional[Dict[str, Any]] = None) -> bool:
+        """
+        Create new collection in database.
+        
+        Args:
+            name: Collection name
+            metadata: Collection metadata
+            
+        Returns:
+            True if creation successful, False otherwise
+        """
+        if metadata is None:
+            metadata = {}
+        
+        metadata['created_at'] = datetime.now().isoformat()
+        metadata['created_by'] = 'ChromaClient'
+        
+        try:
+            self.client.create_collection(name=name, metadata=metadata)
+            logger.info(f"Created new collection: {name}")
+            return True
+            
+        except Exception as error:
+            logger.error(f"Failed to create collection '{name}': {error}")
+            return False
+    
+    def health_check(self) -> Dict[str, Any]:
+        """
+        Perform health check on vector store.
+        
+        Returns:
+            Dictionary containing health status and metrics
+        """
+        try:
+            info = self.get_collection_info()
+            
+            return {
+                'status': 'healthy',
+                'collection_name': self.collection_name,
+                'document_count': info.get('document_count', 0),
+                'has_documents': info.get('has_documents', False),
+                'persist_directory': str(self.persist_directory),
+                'timestamp': datetime.now().isoformat()
+            }
+            
+        except Exception as error:
+            return {
+                'status': 'unhealthy',
+                'error': str(error),
+                'timestamp': datetime.now().isoformat()
+            }
+    
+    def set_top_k(self, k: int) -> None:
+        """
+        Set default number of results for search operations.
+        
+        Args:
+            k: New default top_k value (must be positive)
+            
+        Raises:
+            ValueError: If k is not positive
+        """
+        if k <= 0:
+            raise ValueError("top_k value must be positive")
+        
+        self.default_top_k = k
+        logger.info(f"Default top_k set to: {k}")
+    
+    def batch_similarity_search(self,
+                               queries: List[str],
+                               k: int = 5,
+                               threshold: float = 0.7) -> List[List[Tuple[str, float]]]:
+        """
+        Perform batch similarity search for multiple queries.
+        
+        Args:
+            queries: List of search queries
+            k: Number of results per query
+            threshold: Minimum similarity threshold
+            
+        Returns:
+            List of result lists for each query
+        """
+        return [self.similarity_search(query, k, threshold) for query in queries]
     
     def list_collections(self) -> List[str]:
         """
@@ -406,206 +492,15 @@ class ChromaClient:
         try:
             collections = self.client.list_collections()
             return [col.name for col in collections]
-            
-        except Exception as e:
-            logger.error(f"Error listing collections: {e}")
+        except Exception as error:
+            logger.error(f"Failed to list collections: {error}")
             return []
     
-    def create_new_collection(self, name: str, metadata: Optional[Dict[str, Any]] = None) -> bool:
+    def calculate_similarities(self,
+                              query_embedding: List[float],
+                              doc_embeddings: List[List[float]]) -> List[float]:
         """
-        Create a new collection.
-        
-        Args:
-            name: Collection name
-            metadata: Collection metadata
-            
-        Returns:
-            True if successful
-        """
-        try:
-            if metadata is None:
-                metadata = {}
-            
-            metadata['created_at'] = datetime.now().isoformat()
-            metadata['created_by'] = 'DocuBot'
-            
-            self.client.create_collection(
-                name=name,
-                metadata=metadata
-            )
-            logger.info(f"Created new collection: {name}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error creating collection {name}: {e}")
-            return False
-    
-    def health_check(self) -> Dict[str, Any]:
-        """
-        Check if ChromaDB is healthy.
-        
-        Returns:
-            Health check results
-        """
-        try:
-            # Try to get collection info
-            info = self.get_collection_info()
-            
-            # Try a simple query
-            test_results = self.search("test", n_results=1)
-            
-            return {
-                'status': 'healthy',
-                'collection_name': self.collection_name,
-                'document_count': info.get('document_count', 0),
-                'has_documents': info.get('has_documents', False),
-                'search_working': 'error' not in test_results,
-                'timestamp': datetime.now().isoformat()
-            }
-            
-        except Exception as e:
-            return {
-                'status': 'unhealthy',
-                'error': str(e),
-                'timestamp': datetime.now().isoformat()
-            }
-    
-    # NEW METHODS ADDED BELOW
-    
-    def get_embedding_function(self):
-        """
-        Get embedding function for ChromaDB.
-        
-        Returns:
-            Embedding function instance
-        """
-        try:
-            from sentence_transformers import SentenceTransformer
-            
-            class EmbeddingFunction:
-                def __init__(self, model_name: str = "all-MiniLM-L6-v2"):
-                    """
-                    Initialize embedding function.
-                    
-                    Args:
-                        model_name: Name of the sentence transformer model
-                    """
-                    self.model = SentenceTransformer(model_name)
-                    self.model_name = model_name
-                    logger.info(f"Loaded embedding model: {model_name}")
-                
-                def __call__(self, texts: List[str]) -> List[List[float]]:
-                    """
-                    Generate embeddings for texts.
-                    
-                    Args:
-                        texts: List of text strings
-                        
-                    Returns:
-                        List of embedding vectors
-                    """
-                    if not texts:
-                        return []
-                    
-                    try:
-                        # Encode texts to embeddings
-                        embeddings = self.model.encode(texts)
-                        return embeddings.tolist()
-                    except Exception as e:
-                        logger.error(f"Error generating embeddings: {e}")
-                        return []
-                
-                def get_model_info(self) -> Dict[str, Any]:
-                    """
-                    Get information about the embedding model.
-                    
-                    Returns:
-                        Model information dictionary
-                    """
-                    return {
-                        'model_name': self.model_name,
-                        'embedding_dimension': self.model.get_sentence_embedding_dimension(),
-                        'max_seq_length': self.model.max_seq_length,
-                        'device': str(self.model.device)
-                    }
-            
-            return EmbeddingFunction()
-            
-        except ImportError:
-            logger.error("sentence-transformers not installed. Install with: pip install sentence-transformers")
-            raise
-        except Exception as e:
-            logger.error(f"Failed to create embedding function: {e}")
-            raise
-    
-    def similarity_search(self, query: str, k: int = 5, threshold: float = 0.7) -> List[Tuple[str, float]]:
-        """
-        Perform similarity search with threshold filtering.
-        
-        Args:
-            query: Search query
-            k: Number of results to return
-            threshold: Minimum similarity threshold (0-1, higher means more similar)
-            
-        Returns:
-            List of (document, similarity_score) tuples
-        """
-        try:
-            # Use default top_k if not specified
-            if k is None:
-                k = self.default_top_k
-            
-            # Perform search
-            results = self.search(query=query, n_results=k)
-            
-            if 'error' in results:
-                logger.error(f"Search error: {results['error']}")
-                return []
-            
-            # Filter by similarity threshold
-            filtered_results = []
-            documents = results.get('documents', [])
-            distances = results.get('distances', [])
-            
-            # Convert distances to similarity scores
-            # ChromaDB returns cosine distances (0-2), where 0 means identical
-            # Convert to similarity score (0-1, where 1 means identical)
-            for doc, dist in zip(documents, distances):
-                # Convert distance to similarity score
-                # Cosine distance = 1 - cosine_similarity
-                # So similarity = 1 - distance
-                similarity = 1.0 - dist if dist <= 2.0 else 0.0
-                
-                if similarity >= threshold:
-                    filtered_results.append((doc, similarity))
-            
-            logger.info(f"Similarity search: {len(filtered_results)} results after threshold filtering")
-            return filtered_results
-            
-        except Exception as e:
-            logger.error(f"Error in similarity search: {e}")
-            return []
-    
-    def set_top_k(self, k: int):
-        """
-        Set default top_k parameter for search operations.
-        
-        Args:
-            k: New top_k value
-        """
-        if k <= 0:
-            logger.warning(f"Invalid top_k value: {k}. Must be positive.")
-            return
-        
-        old_value = self.default_top_k
-        self.default_top_k = k
-        logger.info(f"Top-K changed from {old_value} to: {k}")
-    
-    def get_similarity_with_embeddings(self, 
-                                      query_embedding: List[float], 
-                                      doc_embeddings: List[List[float]]) -> List[float]:
-        """
-        Calculate cosine similarity between query embedding and document embeddings.
+        Calculate cosine similarities between query and document embeddings.
         
         Args:
             query_embedding: Query embedding vector
@@ -615,57 +510,112 @@ class ChromaClient:
             List of similarity scores
         """
         try:
-            import numpy as np
-            
-            # Convert to numpy arrays
             query_vec = np.array(query_embedding)
             doc_vecs = np.array(doc_embeddings)
             
-            # Normalize vectors for cosine similarity
             query_norm = query_vec / (np.linalg.norm(query_vec) + 1e-10)
             doc_norms = doc_vecs / (np.linalg.norm(doc_vecs, axis=1, keepdims=True) + 1e-10)
             
-            # Calculate cosine similarities
             similarities = np.dot(doc_norms, query_norm)
             
             return similarities.tolist()
             
-        except Exception as e:
-            logger.error(f"Error calculating similarities: {e}")
+        except Exception as error:
+            logger.error(f"Failed to calculate similarities: {error}")
             return []
     
-    def batch_similarity_search(self, 
-                               queries: List[str], 
-                               k: int = 5, 
-                               threshold: float = 0.7) -> List[List[Tuple[str, float]]]:
+    def get_embedding_function(self, model_name: str = "all-MiniLM-L6-v2"):
         """
-        Perform batch similarity search for multiple queries.
+        Create embedding function using Sentence Transformers.
         
         Args:
-            queries: List of search queries
-            k: Number of results per query
-            threshold: Minimum similarity threshold
+            model_name: Name of the sentence transformer model
             
         Returns:
-            List of results for each query
+            Embedding function instance
+            
+        Raises:
+            ImportError: If sentence-transformers is not installed
         """
-        all_results = []
+        try:
+            from sentence_transformers import SentenceTransformer
+            
+            class EmbeddingFunction:
+                def __init__(self, model_name: str):
+                    self.model = SentenceTransformer(model_name)
+                    self.model_name = model_name
+                    logger.info(f"Loaded embedding model: {model_name}")
+                
+                def __call__(self, texts: List[str]) -> List[List[float]]:
+                    if not texts:
+                        return []
+                    try:
+                        embeddings = self.model.encode(texts)
+                        return embeddings.tolist()
+                    except Exception as error:
+                        logger.error(f"Failed to generate embeddings: {error}")
+                        return []
+                
+                def get_model_info(self) -> Dict[str, Any]:
+                    return {
+                        'model_name': self.model_name,
+                        'embedding_dimension': self.model.get_sentence_embedding_dimension(),
+                        'max_seq_length': self.model.max_seq_length,
+                        'device': str(self.model.device)
+                    }
+            
+            return EmbeddingFunction(model_name)
+            
+        except ImportError:
+            error_msg = "sentence-transformers not installed. Install with: pip install sentence-transformers"
+            logger.error(error_msg)
+            raise ImportError(error_msg)
+    
+    def _format_search_results(self, results: Dict[str, Any]) -> Dict[str, Any]:
+        """Format search results into consistent structure."""
+        return {
+            'ids': results.get('ids', [[]])[0] if results.get('ids') else [],
+            'documents': results.get('documents', [[]])[0] if results.get('documents') else [],
+            'metadatas': results.get('metadatas', [[]])[0] if results.get('metadatas') else [],
+            'distances': results.get('distances', [[]])[0] if results.get('distances') else [],
+            'count': len(results.get('ids', [[]])[0]) if results.get('ids') else 0
+        }
+    
+    def _empty_search_result(self, error_message: str) -> Dict[str, Any]:
+        """Return empty search result with error message."""
+        return {
+            'ids': [],
+            'documents': [],
+            'metadatas': [],
+            'distances': [],
+            'count': 0,
+            'error': error_message
+        }
+    
+    @staticmethod
+    def _distance_to_similarity(distance: float) -> float:
+        """
+        Convert ChromaDB distance to similarity score.
         
-        for query in queries:
-            results = self.similarity_search(query, k, threshold)
-            all_results.append(results)
-        
-        return all_results
+        Args:
+            distance: ChromaDB distance value (0-2)
+            
+        Returns:
+            Similarity score (0-1)
+        """
+        if distance <= 2.0:
+            return 1.0 - distance
+        return 0.0
 
 
-_chroma_instance = None
+# Singleton client instance
+_chroma_instance: Optional[ChromaClient] = None
 
-def get_chroma_client(
-    persist_directory: Optional[Path] = None,
-    collection_name: str = "documents"
-) -> ChromaClient:
+
+def get_chroma_client(persist_directory: Optional[Path] = None,
+                      collection_name: str = "documents") -> ChromaClient:
     """
-    Get or create ChromaClient instance.
+    Get or create singleton ChromaClient instance.
     
     Args:
         persist_directory: Directory to persist ChromaDB data
@@ -678,127 +628,155 @@ def get_chroma_client(
     
     if _chroma_instance is None:
         _chroma_instance = ChromaClient(persist_directory, collection_name)
+    elif (persist_directory is not None and 
+          Path(persist_directory) != _chroma_instance.persist_directory) or \
+         collection_name != _chroma_instance.collection_name:
+        logger.warning("Requested different config than existing singleton, reinitializing")
+        _chroma_instance = ChromaClient(persist_directory, collection_name)
     
     return _chroma_instance
 
 
-if __name__ == "__main__":
+def test_chroma_client():
+    """test function for ChromaClient."""
     import sys
-    import os
     
-    # Add parent directory to path for imports
-    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-    
-    # Configure logging
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
     
     print("=" * 60)
-    print("CHROMADB CLIENT TEST")
+    print("CHROMADB CLIENT TEST SUITE")
     print("=" * 60)
     
     try:
         client = ChromaClient()
         
-        # Test 1: Health check
-        print("\n1. Health check...")
+        print("\n1. HEALTH CHECK")
+        print("-" * 40)
         health = client.health_check()
-        print(f"   Status: {health['status']}")
-        print(f"   Documents: {health.get('document_count', 0)}")
+        print(f"Status: {health['status']}")
+        print(f"Document Count: {health.get('document_count', 0)}")
+        print(f"Has Documents: {health.get('has_documents', False)}")
         
-        # Test 2: Test new methods
-        print("\n2. Testing new methods...")
+        print("\n2. COLLECTION MANAGEMENT")
+        print("-" * 40)
+        print(f"Collection Name: {client.collection_name}")
+        print(f"Default Top K: {client.default_top_k}")
         
-        # Test set_top_k
-        print("\n   2.1 Testing set_top_k()...")
-        client.set_top_k(10)
-        print(f"   ✓ Default top_k set to: {client.default_top_k}")
+        collections = client.list_collections()
+        print(f"Available Collections: {collections}")
         
-        # Test get_embedding_function (requires sentence-transformers)
-        try:
-            print("\n   2.2 Testing get_embedding_function()...")
-            embedding_func = client.get_embedding_function()
-            print(f"   ✓ Embedding function created")
-            
-            # Test embedding generation
-            test_texts = ["Hello world", "Test embedding"]
-            embeddings = embedding_func(test_texts)
-            print(f"   ✓ Generated embeddings: {len(embeddings)} vectors")
-            print(f"   ✓ Each vector dimension: {len(embeddings[0]) if embeddings else 'N/A'}")
-            
-            # Get model info
-            model_info = embedding_func.get_model_info()
-            print(f"   ✓ Model: {model_info['model_name']}")
-            print(f"   ✓ Dimension: {model_info['embedding_dimension']}")
-            
-        except ImportError:
-            print("   ⚠ Sentence-transformers not installed, skipping embedding test")
-            print("   Install with: pip install sentence-transformers")
-        except Exception as e:
-            print(f"   ✗ Embedding function test failed: {e}")
+        print("\n3. DOCUMENT OPERATIONS")
+        print("-" * 40)
         
-        # Test 3: Add test documents
-        test_texts = [
-            "The quick brown fox jumps over the lazy dog.",
-            "Artificial intelligence is transforming the world.",
-            "Python is a popular programming language for data science.",
-            "Machine learning algorithms learn from data patterns.",
-            "Natural language processing enables computers to understand human language."
+        test_documents = [
+            "Artificial intelligence is revolutionizing multiple industries.",
+            "Machine learning algorithms require extensive training data.",
+            "Natural language processing enables computers to understand human language.",
+            "Python is the most popular language for data science.",
+            "Vector databases optimize similarity search for AI applications."
         ]
         
-        test_metadatas = [
-            {"source": "test", "type": "example", "length": len(test_texts[0])},
-            {"source": "test", "type": "example", "length": len(test_texts[1])},
-            {"source": "test", "type": "example", "length": len(test_texts[2])},
-            {"source": "test", "type": "example", "length": len(test_texts[3])},
-            {"source": "test", "type": "example", "length": len(test_texts[4])}
+        test_metadata = [
+            {"category": "AI", "source": "test_data", "language": "en", "version": 1},
+            {"category": "ML", "source": "test_data", "language": "en", "version": 1},
+            {"category": "NLP", "source": "test_data", "language": "en", "version": 1},
+            {"category": "programming", "source": "test_data", "language": "en", "version": 1},
+            {"category": "database", "source": "test_data", "language": "en", "version": 1}
         ]
         
-        print("\n3. Adding test documents...")
-        doc_ids = client.add_documents(texts=test_texts, metadatas=test_metadatas)
-        print(f"   Added {len(doc_ids)} documents")
+        print("Adding test documents...")
+        doc_ids = client.add_documents(
+            texts=test_documents,
+            metadatas=test_metadata
+        )
+        print(f"Added {len(doc_ids)} documents")
         
-        # Test 4: Test similarity_search with threshold
-        print("\n4. Testing similarity_search with threshold...")
-        query = "artificial intelligence"
-        threshold_results = client.similarity_search(query, k=3, threshold=0.5)
-        print(f"   Query: '{query}'")
-        print(f"   Found {len(threshold_results)} results above threshold 0.5")
+        print("\n4. SEARCH OPERATIONS")
+        print("-" * 40)
         
-        for i, (doc, similarity) in enumerate(threshold_results):
-            print(f"   {i+1}. Similarity: {similarity:.4f}")
-            print(f"      Document: {doc[:60]}...")
+        queries = [
+            "artificial intelligence",
+            "machine learning",
+            "data science"
+        ]
         
-        # Test 5: Test batch similarity search
-        print("\n5. Testing batch_similarity_search...")
-        queries = ["machine learning", "programming language", "data science"]
+        for query in queries:
+            print(f"\nQuery: '{query}'")
+            
+            results = client.search(query=query, n_results=2)
+            print(f"  Found {results['count']} results")
+            
+            if results['count'] > 0:
+                for i, (doc, metadata) in enumerate(zip(results['documents'], results['metadatas']), 1):
+                    print(f"  {i}. Category: {metadata.get('category', 'N/A')}")
+                    print(f"     Document: {doc[:60]}...")
+        
+        print("\n5. SIMILARITY SEARCH WITH THRESHOLD")
+        print("-" * 40)
+        query = "AI and machine learning"
+        similarity_results = client.similarity_search(query, k=3, threshold=0.5)
+        print(f"Query: '{query}'")
+        print(f"Results above threshold 0.5: {len(similarity_results)}")
+        
+        for i, (doc, score) in enumerate(similarity_results, 1):
+            print(f"  {i}. Similarity: {score:.4f}")
+            print(f"     Document: {doc[:70]}...")
+        
+        print("\n6. BATCH SEARCH")
+        print("-" * 40)
         batch_results = client.batch_similarity_search(queries, k=2, threshold=0.4)
+        for i, (query, results) in enumerate(zip(queries, batch_results), 1):
+            print(f"  Query {i}: '{query}' - Found {len(results)} results")
         
-        for i, (query, results) in enumerate(zip(queries, batch_results)):
-            print(f"   Query '{query}': {len(results)} results")
+        print("\n7. DOCUMENT RETRIEVAL")
+        print("-" * 40)
+        if doc_ids:
+            sample_id = doc_ids[0]
+            document = client.get_document(sample_id)
+            if document:
+                print(f"Retrieved document ID: {document['id']}")
+                print(f"Category: {document['metadata'].get('category', 'N/A')}")
+                print(f"Document length: {len(document['document'])} characters")
         
-        # Test 6: Collection info
-        print("\n6. Collection info:")
+        print("\n8. COLLECTION INFORMATION")
+        print("-" * 40)
         info = client.get_collection_info()
         for key, value in info.items():
-            if key not in ['sample_document']:  # Skip large values
-                print(f"   {key}: {value}")
+            if key not in ['sample_document']:
+                print(f"{key}: {value}")
         
-        # Test 7: Clean up
-        print(f"\n7. Cleaning up...")
+        print("\n9. CLEANUP")
+        print("-" * 40)
         if doc_ids:
             success = client.delete_documents(doc_ids)
-            print(f"   Deleted test documents: {'Success' if success else 'Failed'}")
+            if success:
+                print(f"Deleted {len(doc_ids)} test documents")
+            else:
+                print("Failed to delete test documents")
         
-        # Reset top_k to default
-        client.set_top_k(5)
-        print(f"   Reset top_k to: {client.default_top_k}")
+        print("\n10. FINAL HEALTH CHECK")
+        print("-" * 40)
+        final_health = client.health_check()
+        print(f"Status: {final_health['status']}")
+        print(f"Final Document Count: {final_health.get('document_count', 0)}")
         
         print("\n" + "=" * 60)
-        print("✅ All tests completed successfully!")
+        print("TEST SUITE COMPLETED SUCCESSFULLY")
         print("=" * 60)
         
-    except Exception as e:
-        print(f"\n❌ Test failed: {e}")
+        return True
+        
+    except Exception as error:
+        print(f"\nTEST FAILED: {error}")
         import traceback
         traceback.print_exc()
-        sys.exit(1)
+        return False
+
+
+if __name__ == "__main__":
+    # Run test
+    success = test_chroma_client()
+    sys.exit(0 if success else 1)

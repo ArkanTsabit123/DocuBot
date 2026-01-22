@@ -1,4 +1,4 @@
-# docubot/src/ai_engine/embedding_service.py
+# docubot/src/ai_engine/embedding_service.pyc
 
 """
 DocuBot Embedding Service
@@ -21,10 +21,39 @@ from sentence_transformers import SentenceTransformer
 import torch
 import psutil
 
-# Configure logging
-logger = logging.getLogger(__name__)
+# Add project root to path for imports
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
 
-# Suppress warnings
+# Try to import custom exceptions
+try:
+    from src.core.exceptions import (
+        AIError, 
+        EmbeddingError, 
+        ModelManagementError,
+        ResourceError,
+        ConfigurationError
+    )
+    HAS_CUSTOM_EXCEPTIONS = True
+except ImportError:
+    # Fallback if exceptions module is not available
+    HAS_CUSTOM_EXCEPTIONS = False
+    # Create minimal exception classes
+    class AIError(Exception):
+        """Base exception for AI/ML related errors."""
+        def __init__(self, message: str, model: Optional[str] = None):
+            super().__init__(message)
+            self.model = model
+            
+    class EmbeddingError(AIError):
+        """Raised when embedding generation fails."""
+        pass
+        
+    class ModelManagementError(AIError):
+        """Raised when model management fails."""
+        pass
+
+logger = logging.getLogger(__name__)
 warnings.filterwarnings('ignore')
 
 
@@ -48,7 +77,6 @@ class EmbeddingModelConfig:
         self.cache_size = cache_size
         self.cache_dir = cache_dir or str(Path.home() / ".docubot" / "cache" / "embeddings")
         
-        # Model registry
         self.model_registry = {
             "all-MiniLM-L6-v2": {
                 "name": "all-MiniLM-L6-v2",
@@ -128,7 +156,7 @@ class EmbeddingCache:
             # Load cache metadata if exists
             metadata_file = self.cache_dir / "cache_metadata.json"
             if metadata_file.exists():
-                with open(metadata_file, 'r') as f:
+                with open(metadata_file, 'r', encoding='utf-8') as f:
                     metadata = json.load(f)
                     self.cache_hits = metadata.get('hits', 0)
                     self.cache_misses = metadata.get('misses', 0)
@@ -186,9 +214,9 @@ class EmbeddingCache:
         try:
             key = self._get_cache_key(text, model_name)
             
-            # Update memory cache
+            # Update memory cache (LRU)
             if len(self.memory_cache) >= self.max_size:
-                # Remove oldest entry (FIFO)
+                # Remove oldest entry
                 oldest_key = next(iter(self.memory_cache))
                 del self.memory_cache[oldest_key]
             
@@ -217,7 +245,7 @@ class EmbeddingCache:
             }
             
             metadata_file = self.cache_dir / "cache_metadata.json"
-            with open(metadata_file, 'w') as f:
+            with open(metadata_file, 'w', encoding='utf-8') as f:
                 json.dump(metadata, f, indent=2)
                 
         except Exception as e:
@@ -379,11 +407,10 @@ class EmbeddingService:
             
             # Configure model settings
             if hasattr(self.model, 'max_seq_length'):
-                # Adjust batch size based on sequence length
                 if self.model.max_seq_length > 512:
                     self.config.batch_size = min(self.config.batch_size, 16)
             
-            # Verify model loaded correctly - FIXED THIS VALIDATION
+            # Verify model loaded correctly
             test_text = "Test initialization"
             test_embedding = self.model.encode(
                 test_text,
@@ -393,17 +420,16 @@ class EmbeddingService:
                 convert_to_numpy=True
             )
             
-            # Fix: The model.encode returns 2D array for single text: shape (1, dimensions)
             if test_embedding is None or test_embedding.size == 0:
-                raise ValueError("Model failed to produce valid embedding")
+                raise RuntimeError("Model failed to produce valid embedding")
             
             # Ensure it's a proper vector
             if len(test_embedding.shape) == 2 and test_embedding.shape[0] == 1:
-                # This is normal: we got shape (1, n) for single text
                 test_embedding = test_embedding.flatten()
             
-            if test_embedding.size != self.config.get_model_info()["dimensions"]:
-                logger.warning(f"Embedding dimension mismatch: expected {self.config.get_model_info()['dimensions']}, got {test_embedding.size}")
+            expected_dimensions = self.config.get_model_info()["dimensions"]
+            if test_embedding.size != expected_dimensions:
+                logger.warning(f"Embedding dimension mismatch: expected {expected_dimensions}, got {test_embedding.size}")
             
             self.initialized = True
             initialization_time = (datetime.now() - start_time).total_seconds()
@@ -416,10 +442,13 @@ class EmbeddingService:
             return True
             
         except Exception as e:
-            logger.error(f"Failed to initialize embedding model: {e}")
-            self.model = None
-            self.initialized = False
-            return False
+            error_msg = f"Failed to initialize embedding model: {e}"
+            logger.error(error_msg)
+            
+            if HAS_CUSTOM_EXCEPTIONS:
+                raise ModelManagementError(error_msg, model_name=self.config.model_name, action="initialize")
+            else:
+                raise RuntimeError(error_msg)
     
     def encode(self, 
                texts: Union[str, List[str]], 
@@ -443,7 +472,11 @@ class EmbeddingService:
         """
         if not self.initialized:
             if not self.initialize():
-                raise RuntimeError("Embedding service failed to initialize")
+                error_msg = "Embedding service failed to initialize"
+                if HAS_CUSTOM_EXCEPTIONS:
+                    raise EmbeddingError(error_msg, model=self.config.model_name)
+                else:
+                    raise RuntimeError(error_msg)
         
         # Convert single text to list
         if isinstance(texts, str):
@@ -495,8 +528,12 @@ class EmbeddingService:
                 generated_embeddings = list(generated)
                 
             except Exception as e:
-                logger.error(f"Error encoding texts: {e}")
-                raise
+                error_msg = f"Error encoding texts: {e}"
+                logger.error(error_msg)
+                if HAS_CUSTOM_EXCEPTIONS:
+                    raise EmbeddingError(error_msg, model=self.config.model_name, text_length=len(uncached_texts))
+                else:
+                    raise RuntimeError(error_msg)
         
         # Combine cached and generated embeddings
         all_embeddings = [None] * len(texts)
@@ -526,7 +563,6 @@ class EmbeddingService:
                     f"(cached: {len(cached_embeddings)}, generated: {len(generated_embeddings)})")
         
         if return_single:
-            # Return 1D array for single text
             return embeddings[0]
         else:
             return embeddings
@@ -539,7 +575,6 @@ class EmbeddingService:
         """Get dimensions of embeddings."""
         if not self.initialized:
             if not self.initialize():
-                # Return from registry if model not loaded
                 model_info = self.config.get_model_info(self.config.model_name)
                 return model_info.get("dimensions", 384)
         
@@ -549,15 +584,13 @@ class EmbeddingService:
             except:
                 pass
         
-        # Return from registry as fallback
         model_info = self.config.get_model_info(self.config.model_name)
         return model_info.get("dimensions", 384)
     
     def get_model_info(self) -> Dict[str, Any]:
-        """Get comprehensive information about current model."""
+        """Get information about current model."""
         model_info = self.config.get_model_info(self.config.model_name)
         
-        # Add runtime information
         runtime_info = {
             'initialized': self.initialized,
             'device': self.device,
@@ -593,14 +626,12 @@ class EmbeddingService:
             if not model_name:
                 continue
             
-            # Check if model is downloaded
             model_path = self._get_model_path().parent / model_name
             model_info['downloaded'] = model_path.exists() and any(
                 f.suffix in ['.bin', '.pt', '.pth', '.model'] 
                 for f in model_path.iterdir() if f.is_file()
             )
             
-            # Add validation status
             model_info['validated'] = self._validate_model_files(model_name)
         
         return models
@@ -613,15 +644,11 @@ class EmbeddingService:
             if not model_path.exists():
                 return False
             
-            # Check for essential files
-            required_files = ['config.json', 'pytorch_model.bin']
             existing_files = [f.name for f in model_path.iterdir() if f.is_file()]
             
-            # Check config.json
             if 'config.json' not in existing_files:
                 return False
             
-            # Check for at least one model file
             model_extensions = ['.bin', '.pt', '.pth', '.model']
             model_files = [f for f in existing_files 
                           if any(f.endswith(ext) for ext in model_extensions)]
@@ -652,29 +679,22 @@ class EmbeddingService:
         try:
             logger.info(f"Switching embedding model to: {model_name}")
             
-            # Save current configuration
             old_model_name = self.config.model_name
             
-            # Clear current model
             if self.model is not None:
-                # Clean up model resources
                 del self.model
                 self.model = None
             
-            # Update configuration
             self.config.model_name = model_name
             
-            # Clear cache (optional, could keep but with different key)
             self.cache.clear()
             
-            # Reinitialize
             self.initialized = False
             success = self.initialize()
             
             if success:
                 logger.info(f"Successfully switched from {old_model_name} to {model_name}")
             else:
-                # Revert on failure
                 self.config.model_name = old_model_name
                 logger.error(f"Failed to switch to model: {model_name}")
             
@@ -697,27 +717,22 @@ class EmbeddingService:
         Returns:
             Cosine similarity score (-1 to 1)
         """
-        # Convert to numpy arrays if needed
         if not isinstance(embedding1, np.ndarray):
             embedding1 = np.array(embedding1, dtype=np.float32)
         if not isinstance(embedding2, np.ndarray):
             embedding2 = np.array(embedding2, dtype=np.float32)
         
-        # Ensure vectors are 1D
         embedding1 = embedding1.flatten()
         embedding2 = embedding2.flatten()
         
-        # Normalize vectors
         norm1 = np.linalg.norm(embedding1)
         norm2 = np.linalg.norm(embedding2)
         
         if norm1 == 0 or norm2 == 0:
             return 0.0
         
-        # Compute cosine similarity
         similarity = np.dot(embedding1, embedding2) / (norm1 * norm2)
         
-        # Clamp to valid range (floating point errors)
         similarity = max(-1.0, min(1.0, similarity))
         
         return float(similarity)
@@ -749,7 +764,6 @@ class EmbeddingService:
             if similarity >= similarity_threshold:
                 similarities.append((i, similarity))
         
-        # Sort by similarity (descending)
         similarities.sort(key=lambda x: x[1], reverse=True)
         
         return similarities[:top_k]
@@ -767,21 +781,17 @@ class EmbeddingService:
         Returns:
             Similarity matrix (n_queries x n_candidates)
         """
-        # Normalize embeddings
         query_norm = np.linalg.norm(query_embeddings, axis=1, keepdims=True)
         candidate_norm = np.linalg.norm(candidate_embeddings, axis=1, keepdims=True)
         
-        # Avoid division by zero
         query_norm[query_norm == 0] = 1e-10
         candidate_norm[candidate_norm == 0] = 1e-10
         
         query_normalized = query_embeddings / query_norm
         candidate_normalized = candidate_embeddings / candidate_norm
         
-        # Compute cosine similarity matrix
         similarity_matrix = np.dot(query_normalized, candidate_normalized.T)
         
-        # Clamp to valid range
         np.clip(similarity_matrix, -1.0, 1.0, out=similarity_matrix)
         
         return similarity_matrix
@@ -816,33 +826,25 @@ class EmbeddingService:
         start_time = datetime.now()
         
         try:
-            # Check model initialization
             model_ok = self.initialized and self.model is not None
-            
-            # Check device
             device_ok = self.device is not None
             
-            # Test encoding
-            test_text = "Health check test"
             test_embedding = None
             encoding_ok = False
             
             if model_ok:
                 try:
-                    test_embedding = self.encode(test_text, use_cache=False)
+                    test_embedding = self.encode("Health check test", use_cache=False)
                     encoding_ok = test_embedding is not None and len(test_embedding) > 0
                 except Exception as e:
                     logger.warning(f"Encoding test failed: {e}")
             
-            # Check cache
             cache_stats = self.cache.get_stats()
-            cache_ok = cache_stats['size'] < cache_stats['max_size'] * 0.9  # Not too full
+            cache_ok = cache_stats['size'] < cache_stats['max_size'] * 0.9
             
-            # Check resources
             memory = psutil.virtual_memory()
             memory_ok = memory.percent < 90
             
-            # Calculate health score (0-100)
             health_score = 0
             if model_ok:
                 health_score += 30
@@ -855,7 +857,6 @@ class EmbeddingService:
             if memory_ok:
                 health_score += 10
             
-            # Determine status
             if health_score >= 80:
                 status = "healthy"
             elif health_score >= 50:
@@ -878,7 +879,6 @@ class EmbeddingService:
                 'timestamp': datetime.now().isoformat()
             }
             
-            # Add recommendations
             recommendations = []
             if not model_ok:
                 recommendations.append("Reinitialize embedding model")
@@ -914,7 +914,6 @@ class EmbeddingService:
             pass
 
 
-# Factory functions for service management
 _global_embedding_service = None
 
 def get_embedding_service(config: Optional[EmbeddingModelConfig] = None) -> EmbeddingService:
@@ -933,7 +932,6 @@ def get_embedding_service(config: Optional[EmbeddingModelConfig] = None) -> Embe
         _global_embedding_service = EmbeddingService(config)
         _global_embedding_service.initialize()
     elif config is not None and config.model_name != _global_embedding_service.config.model_name:
-        # Switch model if different
         _global_embedding_service.switch_model(config.model_name)
     
     return _global_embedding_service
@@ -959,15 +957,13 @@ def test_embedding_service():
     print("DOCUBOT EMBEDDING SERVICE - TEST")
     print("=" * 80)
     
-    # Configure logging
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s [%(levelname)-8s] %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
+        datefmt='%Y-%m-%d %H:%M:%S'  # FIXED: Changed from '%Y-%m-d' to '%Y-%m-%d'
     )
     
     try:
-        # Create configuration
         config = EmbeddingModelConfig(
             model_name="all-MiniLM-L6-v2",
             device="auto",
@@ -976,7 +972,6 @@ def test_embedding_service():
             show_progress_bar=False
         )
         
-        # Create service
         print(f"\n1. Initializing service with model: {config.model_name}")
         service = EmbeddingService(config)
         
@@ -988,7 +983,6 @@ def test_embedding_service():
         print(f"   Device: {service.device}")
         print(f"   Dimensions: {service.get_embedding_dimensions()}")
         
-        # Test single encoding
         print(f"\n2. Testing single text encoding:")
         test_text = "Test document for embedding"
         print(f"   Text: '{test_text}'")
@@ -999,12 +993,11 @@ def test_embedding_service():
         print(f"   Embedding dtype: {embedding.dtype}")
         print(f"   Embedding length: {len(embedding)}")
         
-        # Test batch encoding
         print(f"\n3. Testing batch encoding:")
         batch_texts = [
             "First test document for batch processing",
             "Second document with different content",
-            "Third document for comprehensive testing"
+            "Third document for testing"
         ]
         
         batch_embeddings = service.encode(batch_texts)
@@ -1012,7 +1005,6 @@ def test_embedding_service():
         print(f"   Batch shape: {batch_embeddings.shape}")
         print(f"   Number of embeddings: {len(batch_embeddings)}")
         
-        # Test similarity
         print(f"\n4. Testing similarity computation:")
         similarity = service.compute_similarity(
             batch_embeddings[0], 
@@ -1021,36 +1013,31 @@ def test_embedding_service():
         print(f"   SUCCESS: Similarity computed")
         print(f"   Similarity score: {similarity:.4f}")
         
-        # Test model information
         print(f"\n5. Testing model information:")
         model_info = service.get_model_info()
         print(f"   SUCCESS: Model information retrieved")
         print(f"   Model: {model_info.get('display_name', 'Unknown')}")
         print(f"   Dimensions: {model_info.get('dimensions', 'Unknown')}")
         
-        # Test available models
         print(f"\n6. Testing available models:")
         available_models = service.get_available_models()
         print(f"   SUCCESS: Found {len(available_models)} available models")
         
         for model in available_models:
-            status = "✓" if model.get('downloaded', False) else "○"
+            status = "downloaded" if model.get('downloaded', False) else "available"
             default = " [DEFAULT]" if model.get('default', False) else ""
-            print(f"   {status} {model.get('display_name', 'Unknown')}{default}")
+            print(f"   {model.get('display_name', 'Unknown')}: {status}{default}")
         
-        # Test cache statistics
         print(f"\n7. Testing cache system:")
         cache_stats = service.cache.get_stats()
         print(f"   Cache hits: {cache_stats['hits']}")
         print(f"   Cache misses: {cache_stats['misses']}")
         print(f"   Hit rate: {cache_stats['hit_rate']:.2%}")
         
-        # Test performance statistics
         print(f"\n8. Testing performance statistics:")
         perf_stats = service.get_performance_stats()
         print(f"   Total embeddings processed: {perf_stats['embedding_count']}")
         
-        # Test factory functions
         print(f"\n9. Testing factory functions:")
         global_service = get_embedding_service(config)
         print(f"   Global service retrieved: {global_service is not None}")
@@ -1072,9 +1059,6 @@ def test_embedding_service():
 
 
 if __name__ == "__main__":
-    """
-    Command-line test for embedding service.
-    """
     import argparse
     
     parser = argparse.ArgumentParser(description="Test DocuBot Embedding Service")
@@ -1091,8 +1075,6 @@ if __name__ == "__main__":
     
     args = parser.parse_args()
     
-    # Run test
     success = test_embedding_service()
     
-    # Exit with appropriate code
     sys.exit(0 if success else 1)

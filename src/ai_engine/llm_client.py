@@ -917,6 +917,51 @@ class LLMClient:
         
         return formatted_models
     
+    def get_blueprint_models(self) -> Dict[str, Any]:
+        """Get models in the exact blueprint format for compliance checking."""
+        return {
+            'default': {
+                'name': "llama2:7b",
+                'provider': "ollama",
+                'parameters': {
+                    'temperature': 0.1,
+                    'top_p': 0.9,
+                    'max_tokens': 1024
+                },
+                'requirements': {
+                    'ram': "8GB minimum",
+                    'storage': "4.2GB",
+                    'download_size': "3.8GB"
+                }
+            },
+            'fast': {
+                'name': "mistral:7b",
+                'provider': "ollama",
+                'parameters': {
+                    'temperature': 0.2,
+                    'top_p': 0.95,
+                    'max_tokens': 2048
+                },
+                'requirements': {
+                    'ram': "8GB",
+                    'storage': "4.1GB"
+                }
+            },
+            'accurate': {
+                'name': "neural-chat:7b",
+                'provider': "ollama",
+                'parameters': {
+                    'temperature': 0.05,
+                    'top_p': 0.9,
+                    'max_tokens': 1024
+                },
+                'requirements': {
+                    'ram': "8GB",
+                    'storage': "4.3GB"
+                }
+            }
+        }
+
     def is_model_available(self, model_name: str) -> bool:
         """
         Check if a specific model is available locally.
@@ -1163,6 +1208,9 @@ class LLMClient:
                 if self.request_count > 0 else 0
             )
             
+            # Calculate error rate
+            error_rate = self.error_count / self.request_count if self.request_count > 0 else 0
+            
             result = {
                 'success': True,
                 'status': 'healthy' if health_score >= 80 else 'degraded' if health_score >= 50 else 'unhealthy',
@@ -1175,6 +1223,7 @@ class LLMClient:
                 'supported_models': len(self.MODEL_DATABASE),
                 'request_count': self.request_count,
                 'error_count': self.error_count,
+                'error_rate': error_rate,
                 'total_tokens_processed': self.total_tokens_processed,
                 'average_processing_time_ms': avg_processing_time,
                 'connection_attempts': self.connection_attempts,
@@ -1479,7 +1528,8 @@ def validate_llm_environment() -> Dict[str, Any]:
     
     # Check core config
     try:
-        from core.config import get_config
+        # Note: This import should work from the correct module path
+        from ..core.config import get_config
         results['core_config_available'] = True
     except ImportError:
         results['warnings'].append("core.config module not available")

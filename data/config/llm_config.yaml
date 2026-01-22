@@ -1,6 +1,43 @@
 #docubot/data/config/llm_config.yaml
 
+# LLM Configuration
+llm_models:
+  default:
+    name: "llama2:7b"
+    provider: "ollama"
+    parameters:
+      temperature: 0.1
+      top_p: 0.9
+      max_tokens: 1024
+    requirements:
+      ram: "8GB minimum"
+      storage: "4.2GB"
+      download_size: "3.8GB"
+  
+  fast:
+    name: "mistral:7b"
+    provider: "ollama"
+    parameters:
+      temperature: 0.2
+      top_p: 0.95
+      max_tokens: 2048
+    requirements:
+      ram: "8GB"
+      storage: "4.1GB"
+  
+  accurate:
+    name: "neural-chat:7b"
+    provider: "ollama"
+    parameters:
+      temperature: 0.05
+      top_p: 0.9
+      max_tokens: 1024
+    requirements:
+      ram: "8GB"
+      storage: "4.3GB"
+
 # Ollama server settings
+
 ollama:
   host: "http://localhost:11434"
   timeout: 120

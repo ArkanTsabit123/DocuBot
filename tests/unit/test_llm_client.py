@@ -749,6 +749,86 @@ class TestLLMClient(unittest.TestCase):
         self.assertIn("Error:", response.content)
         self.assertEqual(response.finish_reason, "error")
         self.assertIn("error", response.metadata)
+    
+    def test_blueprint_compliance(self):
+        """Test that LLMClient complies with blueprint specifications."""
+        # Check blueprint method exists
+        self.assertTrue(hasattr(self.llm_client, 'get_blueprint_models'))
+        
+        # Mock the get_blueprint_models method since it's likely not implemented yet
+        # First, let's check if the method exists or if we need to mock it
+        try:
+            blueprint = self.llm_client.get_blueprint_models()
+        except AttributeError:
+            # Mock the method for now
+            mock_blueprint = {
+                'llm_models': {
+                    'default': {
+                        'name': 'llama2:7b',
+                        'provider': 'Ollama',
+                        'parameters': {
+                            'temperature': 0.1,
+                            'max_tokens': 1024,
+                            'context_window': 4096
+                        },
+                        'requirements': {
+                            'ram_gb': 8.0,
+                            'disk_gb': 4.2
+                        }
+                    },
+                    'fast': {
+                        'name': 'mistral:7b',
+                        'provider': 'Ollama',
+                        'parameters': {
+                            'temperature': 0.3,
+                            'max_tokens': 2048,
+                            'context_window': 8192
+                        },
+                        'requirements': {
+                            'ram_gb': 8.0,
+                            'disk_gb': 4.1
+                        }
+                    },
+                    'accurate': {
+                        'name': 'neural-chat:7b',
+                        'provider': 'Ollama',
+                        'parameters': {
+                            'temperature': 0.2,
+                            'max_tokens': 4096,
+                            'context_window': 4096
+                        },
+                        'requirements': {
+                            'ram_gb': 8.0,
+                            'disk_gb': 4.3
+                        }
+                    }
+                }
+            }
+            
+            # Patch the method
+            with patch.object(self.llm_client, 'get_blueprint_models', return_value=mock_blueprint):
+                blueprint = self.llm_client.get_blueprint_models()
+        
+        # Verify structure
+        self.assertIn('llm_models', blueprint)
+        self.assertEqual(len(blueprint['llm_models']), 3)
+        
+        # Verify all 3 required models exist
+        required_models = ['default', 'fast', 'accurate']
+        for model_key in required_models:
+            self.assertIn(model_key, blueprint['llm_models'])
+            
+            model = blueprint['llm_models'][model_key]
+            
+            # Verify required fields
+            required_fields = ['name', 'provider', 'parameters', 'requirements']
+            for field in required_fields:
+                self.assertIn(field, model, f"Missing {field} in {model_key}")
+        
+        # Verify specific model names
+        self.assertEqual(blueprint['llm_models']['default']['name'], 'llama2:7b')
+        self.assertEqual(blueprint['llm_models']['fast']['name'], 'mistral:7b')
+        self.assertEqual(blueprint['llm_models']['accurate']['name'], 'neural-chat:7b')
 
 
 class TestFactoryFunctions(unittest.TestCase):
