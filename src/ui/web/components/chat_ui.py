@@ -1,3 +1,5 @@
+# docubot/src/ui/web/components/chat_ui.py
+
 """
 Web Chat UI Components for Streamlit
 """

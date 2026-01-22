@@ -36,6 +36,8 @@ nosetests.xml
 coverage.xml
 *.cover
 .hypothesis/
+*test*.py
+*test_*.py
 
 # Virtual environments
 venv/
@@ -77,12 +79,19 @@ venv.bak/
 *.debug.py
 *.test.py
 
+
 # Progress tracking files
 .docubot_progress.json
 .docubot_progress_*.json
 *.progress.json
 *_progress.json
 smart_validation_report.json
+*system_check*.json
+*check_report*.json
+*progress_summary*.json
+*requirements_analysis*.json
+*dependency_report*.json
+
 
 # ============================================
 # APPLICATION SPECIFIC EXCLUSIONS
@@ -175,6 +184,8 @@ AppImage/
 .env.*.local
 .secrets/
 
+
+
 # ============================================
 # DATABASE FILES
 # ============================================
@@ -259,3 +270,4 @@ poetry.lock
 !requirements.txt
 !app.py
 !install_docubot.py
+!check_server.py

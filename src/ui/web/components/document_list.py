@@ -1,3 +1,5 @@
+# docubot/src/ui/web/components/document_list.py
+
 """
 Document List Components for Streamlit
 """

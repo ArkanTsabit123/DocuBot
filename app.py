@@ -1,4 +1,4 @@
-# app.py
+#!/usr/bin/env python3
 """
 DocuBot - Main Application Entry Point
 Local AI Knowledge Assistant for Document Management and Querying
@@ -15,7 +15,7 @@ import argparse
 import platform
 import subprocess
 from pathlib import Path
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 from datetime import datetime
 from dataclasses import dataclass, asdict
 import yaml
@@ -27,18 +27,21 @@ sys.path.insert(0, str(project_root))
 
 @dataclass
 class ApplicationStatus:
-    """Application status information."""
+    """Application status tracking."""
     initialized: bool = False
     startup_time: float = 0.0
     components_loaded: List[str] = None
     error_count: int = 0
     warnings: List[str] = None
+    critical_errors: List[str] = None
     
     def __post_init__(self):
         if self.components_loaded is None:
             self.components_loaded = []
         if self.warnings is None:
             self.warnings = []
+        if self.critical_errors is None:
+            self.critical_errors = []
     
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dictionary."""
@@ -46,7 +49,7 @@ class ApplicationStatus:
 
 
 class ConfigurationManager:
-    """Simple configuration manager."""
+    """Application configuration management."""
     
     def __init__(self, config_path: Optional[Path] = None):
         """Initialize configuration manager."""
@@ -55,21 +58,22 @@ class ConfigurationManager:
         self.load_config()
     
     def load_default_config(self) -> Dict[str, Any]:
-        """Load default configuration."""
+        """Load default application configuration."""
         return {
-            "app": {
+            "application": {
                 "name": "DocuBot",
                 "version": "1.0.0",
-                "debug": False,
-                "log_level": "INFO"
+                "debug_mode": False,
+                "log_level": "INFO",
+                "mode": "desktop"
             },
-            "paths": {
-                "data_dir": str(project_root / "data"),
-                "models_dir": str(project_root / "data" / "models"),
-                "documents_dir": str(project_root / "data" / "documents"),
-                "database_dir": str(project_root / "data" / "database"),
-                "logs_dir": str(project_root / "data" / "logs"),
-                "exports_dir": str(project_root / "data" / "exports")
+            "directories": {
+                "data": str(project_root / "data"),
+                "models": str(project_root / "data" / "models"),
+                "documents": str(project_root / "data" / "documents"),
+                "database": str(project_root / "data" / "database"),
+                "logs": str(project_root / "data" / "logs"),
+                "exports": str(project_root / "data" / "exports")
             },
             "document_processing": {
                 "chunk_size": 500,
@@ -78,8 +82,8 @@ class ConfigurationManager:
                 "supported_formats": [".pdf", ".docx", ".txt", ".epub", ".md", ".html"],
                 "ocr_enabled": True
             },
-            "ai": {
-                "llm": {
+            "artificial_intelligence": {
+                "language_model": {
                     "provider": "ollama",
                     "model": "llama2:7b",
                     "temperature": 0.1,
@@ -89,12 +93,12 @@ class ConfigurationManager:
                     "model": "all-MiniLM-L6-v2",
                     "dimensions": 384
                 },
-                "rag": {
+                "retrieval_augmented_generation": {
                     "top_k": 5,
                     "similarity_threshold": 0.7
                 }
             },
-            "ui": {
+            "user_interface": {
                 "theme": "dark",
                 "language": "en",
                 "font_size": 12
@@ -106,30 +110,29 @@ class ConfigurationManager:
         }
     
     def load_config(self):
-        """Load configuration from file."""
+        """Load configuration from file system."""
         try:
             if self.config_path.exists():
                 with open(self.config_path, 'r', encoding='utf-8') as f:
                     file_config = yaml.safe_load(f)
                 
-                # Merge configurations
-                self.merge_configs(self.config, file_config)
-                print(f"Loaded configuration from {self.config_path}")
+                self.merge_configurations(self.config, file_config)
+                print(f"Configuration loaded from {self.config_path}")
             else:
-                print(f"Config file not found at {self.config_path}, using defaults")
+                print(f"Configuration file not found at {self.config_path}, using defaults")
         except Exception as e:
-            print(f"Error loading config file: {e}")
+            print(f"Configuration loading error: {e}")
     
-    def merge_configs(self, base: Dict, overlay: Dict):
-        """Recursively merge two dictionaries."""
+    def merge_configurations(self, base: Dict, overlay: Dict):
+        """Recursively merge configuration dictionaries."""
         for key, value in overlay.items():
             if key in base and isinstance(base[key], dict) and isinstance(value, dict):
-                self.merge_configs(base[key], value)
+                self.merge_configurations(base[key], value)
             else:
                 base[key] = value
     
     def get(self, key: str, default: Any = None) -> Any:
-        """Get configuration value using dot notation."""
+        """Retrieve configuration value using dot notation."""
         keys = key.split('.')
         value = self.config
         
@@ -142,7 +145,7 @@ class ConfigurationManager:
         return value
     
     def save(self):
-        """Save configuration to file."""
+        """Persist configuration to file system."""
         try:
             self.config_path.parent.mkdir(parents=True, exist_ok=True)
             with open(self.config_path, 'w', encoding='utf-8') as f:
@@ -150,98 +153,85 @@ class ConfigurationManager:
             print(f"Configuration saved to {self.config_path}")
             return True
         except Exception as e:
-            print(f"Error saving configuration: {e}")
+            print(f"Configuration save error: {e}")
             return False
     
-    def validate(self) -> bool:
-        """Validate configuration."""
+    def validate(self) -> Tuple[bool, List[str]]:
+        """Validate configuration integrity."""
+        validation_errors = []
+        
         required_paths = [
-            "paths.data_dir",
-            "paths.documents_dir",
-            "paths.logs_dir"
+            "directories.data",
+            "directories.documents",
+            "directories.logs"
         ]
         
         for path_key in required_paths:
             path_str = self.get(path_key)
             if not path_str:
-                print(f"Missing required configuration: {path_key}")
-                return False
+                validation_errors.append(f"Missing required configuration: {path_key}")
         
-        return True
+        return len(validation_errors) == 0, validation_errors
 
 
-class Logger:
-    """Simple logger for application."""
+class ApplicationLogger:
+    """Unified application logging system."""
     
     def __init__(self, name: str = "docubot", log_dir: Optional[Path] = None, level: str = "INFO"):
-        """Initialize logger."""
+        """Initialize application logger."""
         self.name = name
         self.log_dir = log_dir or project_root / "data" / "logs"
         self.level = level
-        self.log_file = self.log_dir / "app.log"
-        self.setup_logging()
+        self.log_file = self.log_dir / "application.log"
+        self.setup_logging_infrastructure()
     
-    def setup_logging(self):
-        """Setup logging directory and file."""
+    def setup_logging_infrastructure(self):
+        """Establish logging directory and file structure."""
         try:
             self.log_dir.mkdir(parents=True, exist_ok=True)
         except Exception as e:
-            print(f"Failed to create log directory: {e}")
+            print(f"Log directory creation error: {e}")
     
-    def log(self, level: str, message: str, **kwargs):
-        """Log a message."""
+    def log_message(self, level: str, message: str, **kwargs):
+        """Log a message with specified severity level."""
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         log_message = f"{timestamp} - {level.upper()} - {message}"
         
         if kwargs:
             log_message += f" - {kwargs}"
         
-        # Print to console
+        # Console output
         print(log_message)
         
-        # Write to file
+        # File persistence
         try:
             with open(self.log_file, 'a', encoding='utf-8') as f:
                 f.write(log_message + "\n")
         except Exception:
             pass
     
-    def info(self, message: str, **kwargs):
-        """Log info message."""
-        self.log("INFO", message, **kwargs)
+    def information(self, message: str, **kwargs):
+        """Log informational message."""
+        self.log_message("INFO", message, **kwargs)
     
     def error(self, message: str, **kwargs):
         """Log error message."""
-        self.log("ERROR", message, **kwargs)
+        self.log_message("ERROR", message, **kwargs)
     
     def warning(self, message: str, **kwargs):
         """Log warning message."""
-        self.log("WARNING", message, **kwargs)
+        self.log_message("WARNING", message, **kwargs)
     
     def debug(self, message: str, **kwargs):
         """Log debug message."""
-        self.log("DEBUG", message, **kwargs)
+        self.log_message("DEBUG", message, **kwargs)
 
 
 class DocuBotCore:
-    """
-    Main application orchestrator.
+    """Main application orchestration engine."""
     
-    This class coordinates all core functionality including:
-    - Document processing and ingestion
-    - Vector storage management
-    - LLM integration
-    - Query processing
-    """
-    
-    def __init__(self, config: ConfigurationManager, logger: Logger):
-        """
-        Initialize the DocuBot core application.
-        
-        Args:
-            config: Configuration manager instance
-            logger: Logger instance
-        """
+    def __init__(self, config: ConfigurationManager, logger: ApplicationLogger):
+        """Initialize core application engine."""
         self.config = config
         self.logger = logger
         self.status = ApplicationStatus()
@@ -249,152 +239,142 @@ class DocuBotCore:
         self.startup_time = time.time()
     
     def initialize(self) -> bool:
-        """
-        Initialize all core components.
-        
-        Returns:
-            bool: True if initialization succeeded, False otherwise
-        """
+        """Initialize all core application components."""
         try:
-            self.logger.info("Initializing DocuBot Core...")
+            self.logger.information("Initializing DocuBot Core engine...")
             
-            # Create necessary directories
-            self.create_directories()
+            # Establish directory structure
+            self.create_required_directories()
             
-            # Initialize components in order
-            components_to_load = [
-                ("database", self.initialize_database),
-                ("vector_store", self.initialize_vector_store),
-                ("document_processor", self.initialize_document_processor),
-                ("ai_engine", self.initialize_ai_engine)
+            # Component initialization sequence
+            component_initialization = [
+                ("database", self.initialize_database_system),
+                ("vector_store", self.initialize_vector_storage),
+                ("document_processor", self.initialize_document_processing),
+                ("artificial_intelligence", self.initialize_ai_components)
             ]
             
-            for name, init_func in components_to_load:
+            for component_name, initialization_method in component_initialization:
                 try:
-                    success = init_func()
+                    success = initialization_method()
                     if success:
-                        self.status.components_loaded.append(name)
-                        self.logger.info(f"Component '{name}' initialized successfully")
+                        self.status.components_loaded.append(component_name)
+                        self.logger.information(f"Component '{component_name}' initialization successful")
                     else:
-                        self.status.warnings.append(f"Component '{name}' initialization failed")
+                        self.status.warnings.append(f"Component '{component_name}' initialization incomplete")
                 except Exception as e:
-                    self.status.warnings.append(f"Error initializing '{name}': {str(e)}")
-                    self.logger.error(f"Failed to initialize component '{name}': {e}")
+                    self.status.warnings.append(f"Component '{component_name}' initialization error: {str(e)}")
+                    self.logger.error(f"Component '{component_name}' initialization failure: {e}")
             
-            # Calculate startup time
+            # Calculate initialization metrics
             self.status.startup_time = time.time() - self.startup_time
             self.status.initialized = len(self.status.components_loaded) > 0
             
             if self.status.initialized:
-                self.logger.info(f"DocuBot Core initialized successfully in {self.status.startup_time:.2f}s")
-                self.logger.info(f"Loaded components: {', '.join(self.status.components_loaded)}")
+                self.logger.information(f"DocuBot Core initialization completed in {self.status.startup_time:.2f} seconds")
+                self.logger.information(f"Active components: {', '.join(self.status.components_loaded)}")
             else:
-                self.logger.warning("DocuBot Core partially initialized - some components failed")
+                self.logger.warning("DocuBot Core partial initialization - some components unavailable")
             
             return self.status.initialized
             
         except Exception as e:
-            self.logger.error(f"Failed to initialize DocuBot Core: {e}")
+            self.logger.error(f"DocuBot Core initialization failure: {e}")
             self.logger.debug(traceback.format_exc())
             return False
     
-    def create_directories(self):
-        """Create necessary directories."""
-        dirs_to_create = [
-            self.config.get("paths.data_dir"),
-            self.config.get("paths.models_dir"),
-            self.config.get("paths.documents_dir"),
-            self.config.get("paths.database_dir"),
-            self.config.get("paths.logs_dir"),
-            self.config.get("paths.exports_dir"),
+    def create_required_directories(self):
+        """Create necessary directory structure."""
+        directories_to_create = [
+            self.config.get("directories.data"),
+            self.config.get("directories.models"),
+            self.config.get("directories.documents"),
+            self.config.get("directories.database"),
+            self.config.get("directories.logs"),
+            self.config.get("directories.exports"),
         ]
         
-        for dir_path in dirs_to_create:
-            if dir_path:
+        for directory_path in directories_to_create:
+            if directory_path:
                 try:
-                    Path(dir_path).mkdir(parents=True, exist_ok=True)
-                    self.logger.debug(f"Created directory: {dir_path}")
+                    Path(directory_path).mkdir(parents=True, exist_ok=True)
+                    self.logger.debug(f"Directory created: {directory_path}")
                 except Exception as e:
-                    self.logger.warning(f"Failed to create directory {dir_path}: {e}")
+                    self.logger.warning(f"Directory creation error {directory_path}: {e}")
     
-    def initialize_database(self) -> bool:
-        """Initialize database connections."""
-        self.logger.info("Initializing database...")
-        # Check if SQLite database exists or can be created
-        db_path = Path(self.config.get("paths.database_dir")) / "sqlite.db"
+    def initialize_database_system(self) -> bool:
+        """Initialize database connectivity."""
+        self.logger.information("Initializing database system...")
+        database_path = Path(self.config.get("directories.database")) / "sqlite.db"
         try:
             import sqlite3
-            conn = sqlite3.connect(db_path)
-            conn.execute("SELECT 1")
-            conn.close()
-            self.components["database"] = {"type": "sqlite", "path": str(db_path)}
+            connection = sqlite3.connect(database_path)
+            connection.execute("SELECT 1")
+            connection.close()
+            self.components["database"] = {"type": "sqlite", "path": str(database_path)}
             return True
         except Exception as e:
-            self.logger.warning(f"Database initialization failed: {e}")
+            self.logger.warning(f"Database system initialization failure: {e}")
             return False
     
-    def initialize_vector_store(self) -> bool:
-        """Initialize vector store for embeddings."""
-        self.logger.info("Initializing vector store...")
-        # Check if vector store directory exists
-        vector_store_dir = Path(self.config.get("paths.database_dir")) / "chroma"
+    def initialize_vector_storage(self) -> bool:
+        """Initialize vector storage infrastructure."""
+        self.logger.information("Initializing vector storage...")
+        vector_store_directory = Path(self.config.get("directories.database")) / "chroma"
         try:
-            vector_store_dir.mkdir(parents=True, exist_ok=True)
-            self.components["vector_store"] = {"type": "chromadb", "path": str(vector_store_dir)}
+            vector_store_directory.mkdir(parents=True, exist_ok=True)
+            self.components["vector_store"] = {"type": "chromadb", "path": str(vector_store_directory)}
             return True
         except Exception as e:
-            self.logger.warning(f"Vector store initialization failed: {e}")
+            self.logger.warning(f"Vector storage initialization failure: {e}")
             return False
     
-    def initialize_document_processor(self) -> bool:
+    def initialize_document_processing(self) -> bool:
         """Initialize document processing pipeline."""
-        self.logger.info("Initializing document processor...")
-        # Check for required document processing libraries
+        self.logger.information("Initializing document processing system...")
         try:
-            # Try to import basic text processing
             import re
             import chardet
             self.components["document_processor"] = {"status": "available"}
             return True
         except ImportError as e:
-            self.logger.warning(f"Document processor dependencies missing: {e}")
+            self.logger.warning(f"Document processing dependencies unavailable: {e}")
             return False
     
-    def initialize_ai_engine(self) -> bool:
-        """Initialize AI/ML components."""
-        self.logger.info("Initializing AI engine...")
-        # Check for AI components
-        ai_status = {"llm": "not_available", "embeddings": "not_available"}
+    def initialize_ai_components(self) -> bool:
+        """Initialize artificial intelligence components."""
+        self.logger.information("Initializing AI components...")
+        ai_component_status = {"language_model": "unavailable", "embeddings": "unavailable"}
         
-        # Check for Ollama
+        # Verify Ollama availability
         try:
             result = subprocess.run(["ollama", "--version"], capture_output=True, text=True, check=False)
             if result.returncode == 0:
-                ai_status["llm"] = "available"
-                self.logger.info(f"Ollama found: {result.stdout.strip()}")
+                ai_component_status["language_model"] = "available"
+                self.logger.information(f"Ollama detected: {result.stdout.strip()}")
         except (FileNotFoundError, subprocess.SubprocessError):
-            self.logger.warning("Ollama not found - LLM features will be disabled")
+            self.logger.warning("Ollama not available - language model features disabled")
         
-        # Check for sentence-transformers
+        # Verify sentence transformers
         try:
             import sentence_transformers
-            ai_status["embeddings"] = "available"
-            self.logger.info("Sentence transformers available")
+            ai_component_status["embeddings"] = "available"
+            self.logger.information("Sentence transformers available")
         except ImportError:
-            self.logger.warning("Sentence transformers not found - embedding features will be disabled")
+            self.logger.warning("Sentence transformers unavailable - embedding features disabled")
         
-        self.components["ai_engine"] = ai_status
-        return ai_status["llm"] == "available" or ai_status["embeddings"] == "available"
+        self.components["artificial_intelligence"] = ai_component_status
+        return ai_component_status["language_model"] == "available" or ai_component_status["embeddings"] == "available"
     
     def process_document(self, file_path: str) -> Dict[str, Any]:
         """
-        Process a document file.
+        Process document file through ingestion pipeline.
         
         Args:
-            file_path: Path to the document file
+            file_path: Path to document file
             
         Returns:
-            Dict with processing results
+            Processing results dictionary
         """
         if not self.status.initialized:
             return {
@@ -403,10 +383,10 @@ class DocuBotCore:
                 "file_path": file_path
             }
         
-        self.logger.info(f"Processing document: {file_path}")
+        self.logger.information(f"Document processing initiated: {file_path}")
         
         try:
-            # Basic document validation
+            # Document validation
             path = Path(file_path)
             if not path.exists():
                 return {
@@ -415,45 +395,44 @@ class DocuBotCore:
                     "file_path": file_path
                 }
             
-            # Check file extension
-            file_ext = path.suffix.lower()
+            # Format validation
+            file_extension = path.suffix.lower()
             supported_formats = self.config.get("document_processing.supported_formats", [])
             
-            if file_ext not in supported_formats:
+            if file_extension not in supported_formats:
                 return {
                     "status": "error",
-                    "message": f"Unsupported file format: {file_ext}. Supported: {supported_formats}",
+                    "message": f"Unsupported file format: {file_extension}. Supported formats: {supported_formats}",
                     "file_path": file_path
                 }
             
-            # For now, just return success with basic info
-            # Actual processing will be implemented in document_processing module
+            # Document processing placeholder
             return {
                 "status": "success",
                 "message": "Document queued for processing",
                 "file_path": file_path,
                 "file_size": path.stat().st_size,
-                "file_type": file_ext
+                "file_type": file_extension
             }
             
         except Exception as e:
-            self.logger.error(f"Error processing document {file_path}: {e}")
+            self.logger.error(f"Document processing error {file_path}: {e}")
             return {
                 "status": "error",
                 "message": f"Processing error: {str(e)}",
                 "file_path": file_path
             }
     
-    def ask_question(self, question: str, context: Dict = None) -> Dict[str, Any]:
+    def query_documents(self, question: str, context: Dict = None) -> Dict[str, Any]:
         """
-        Process a user question using RAG pipeline.
+        Process document query using retrieval augmented generation.
         
         Args:
-            question: User's question
-            context: Additional context (conversation history, etc.)
+            question: Query text
+            context: Additional query context
             
         Returns:
-            Dict with answer and metadata
+            Query response dictionary
         """
         if not self.status.initialized:
             return {
@@ -463,123 +442,117 @@ class DocuBotCore:
                 "confidence": 0.0
             }
         
-        self.logger.info(f"Processing question: {question}")
+        self.logger.information(f"Document query received: {question}")
         
-        # Check if AI components are available
-        ai_status = self.components.get("ai_engine", {})
+        # AI component availability check
+        ai_status = self.components.get("artificial_intelligence", {})
         
-        if ai_status.get("llm") != "available":
+        if ai_status.get("language_model") != "available":
             return {
                 "status": "warning",
-                "answer": "LLM features are not available. Please install Ollama to enable AI question answering.",
+                "answer": "Language model features unavailable. Install Ollama to enable AI question answering.",
                 "sources": [],
                 "confidence": 0.0
             }
         
-        # Placeholder for actual RAG pipeline
-        # This will be implemented in ai_engine module
+        # Retrieval augmented generation placeholder
         return {
             "status": "success",
-            "answer": f"This is a placeholder response to your question: '{question}'\n\nAI question answering is not fully implemented yet. Please check back after completing the AI integration tasks.",
+            "answer": f"Query response placeholder for: '{question}'\n\nAI question answering functionality requires completion of AI integration tasks.",
             "sources": ["System placeholder"],
             "confidence": 0.3,
             "processing_time": 0.1
         }
     
-    def get_status(self) -> Dict[str, Any]:
-        """
-        Get current application status.
-        
-        Returns:
-            Dict with status information
-        """
+    def get_application_status(self) -> Dict[str, Any]:
+        """Retrieve comprehensive application status."""
         return {
             **self.status.to_dict(),
             "timestamp": datetime.now().isoformat(),
             "components": self.components,
-            "config": {
-                "app_name": self.config.get("app.name"),
-                "version": self.config.get("app.version"),
-                "debug": self.config.get("app.debug")
+            "configuration": {
+                "application_name": self.config.get("application.name"),
+                "version": self.config.get("application.version"),
+                "debug_mode": self.config.get("application.debug_mode")
             }
         }
     
     def shutdown(self):
-        """Gracefully shutdown all components."""
-        self.logger.info("Shutting down DocuBot Core...")
+        """Gracefully terminate all core components."""
+        self.logger.information("Initiating DocuBot Core shutdown...")
         self.status.initialized = False
         self.components.clear()
-        self.logger.info("DocuBot Core shutdown complete")
+        self.logger.information("DocuBot Core shutdown complete")
 
 
 class DocuBotApplication:
-    """
-    Main application orchestrator for DocuBot.
-    Handles initialization, lifecycle management, and graceful shutdown.
-    """
+    """Primary application orchestrator and lifecycle manager."""
     
     def __init__(self):
-        """Initialize the DocuBot application."""
+        """Initialize DocuBot application."""
         self.project_root = Path(__file__).parent
-        self.config = None
+        self.configuration = None
         self.core = None
         self.logger = None
-        self.running = False
+        self.application_running = False
         
-        # Setup signal handlers for graceful shutdown
-        signal.signal(signal.SIGINT, self.signal_handler)
-        signal.signal(signal.SIGTERM, self.signal_handler)
+        # Graceful shutdown signal handlers
+        signal.signal(signal.SIGINT, self.handle_termination_signal)
+        signal.signal(signal.SIGTERM, self.handle_termination_signal)
     
-    def signal_handler(self, signum, frame):
-        """Handle termination signals gracefully."""
+    def handle_termination_signal(self, signal_number, frame):
+        """Handle application termination signals gracefully."""
         if self.logger:
-            self.logger.info(f"Received signal {signum}, initiating shutdown...")
+            self.logger.information(f"Termination signal received: {signal_number}")
         self.shutdown()
         sys.exit(0)
     
     def initialize(self) -> bool:
         """
-        Initialize the application and all components.
+        Initialize complete application infrastructure.
         
         Returns:
-            bool: True if initialization succeeded, False otherwise
+            bool: Initialization success status
         """
         try:
-            # Initialize logging
-            self.logger = Logger(
+            # Initialize logging system
+            self.logger = ApplicationLogger(
                 name="docubot",
                 log_dir=self.project_root / "data" / "logs",
                 level="INFO"
             )
-            self.logger.info("Initializing DocuBot application...")
-            self.logger.info(f"Project root: {self.project_root}")
+            self.logger.information("Initializing DocuBot application...")
+            self.logger.information(f"Project root directory: {self.project_root}")
             
-            # Load configuration
-            self.logger.info("Loading configuration...")
-            self.config = ConfigurationManager()
+            # Load application configuration
+            self.logger.information("Loading application configuration...")
+            self.configuration = ConfigurationManager()
             
-            if not self.config.validate():
+            validation_success, validation_errors = self.configuration.validate()
+            if not validation_success:
                 self.logger.error("Configuration validation failed")
+                for error in validation_errors:
+                    self.logger.error(f"Validation error: {error}")
                 return False
             
-            # Initialize core application
-            self.logger.info("Initializing core application...")
-            self.core = DocuBotCore(config=self.config, logger=self.logger)
+            # Initialize core application engine
+            self.logger.information("Initializing application core...")
+            self.core = DocuBotCore(config=self.configuration, logger=self.logger)
             
             if not self.core.initialize():
-                self.logger.warning("Core initialization had issues, but continuing...")
+                self.logger.warning("Core initialization issues detected, continuing execution...")
             
-            # Check system requirements
-            self.logger.info("Checking system requirements...")
-            system_check = self.check_system_requirements()
+            # System requirements verification
+            self.logger.information("Verifying system requirements...")
+            system_verification = self.verify_system_requirements()
             
-            if not system_check["success"]:
-                self.logger.warning(f"System check warnings: {system_check.get('warnings', [])}")
-                if system_check.get("critical_errors"):
-                    self.logger.error(f"Critical errors: {system_check['critical_errors']}")
+            if not system_verification["success"]:
+                self.logger.warning(f"System verification warnings: {system_verification.get('warnings', [])}")
+                if system_verification.get("critical_errors"):
+                    self.logger.error(f"Critical system errors: {system_verification['critical_errors']}")
                     return False
             
-            self.logger.info("Application initialization completed")
+            self.logger.information("Application initialization completed")
             return True
             
         except Exception as e:
@@ -591,14 +564,14 @@ class DocuBotApplication:
                 print(traceback.format_exc())
             return False
     
-    def check_system_requirements(self) -> Dict[str, Any]:
+    def verify_system_requirements(self) -> Dict[str, Any]:
         """
-        Check if system meets minimum requirements.
+        Verify minimum system requirements.
         
         Returns:
-            Dict containing success status, warnings, and critical errors
+            System verification results
         """
-        result = {
+        verification_result = {
             "success": True,
             "warnings": [],
             "critical_errors": []
@@ -607,495 +580,491 @@ class DocuBotApplication:
         try:
             import psutil
             
-            # Check Python version
+            # Python version verification
             python_version = sys.version_info
             if python_version.major < 3 or (python_version.major == 3 and python_version.minor < 11):
-                result["critical_errors"].append(f"Python 3.11+ required, found {python_version.major}.{python_version.minor}")
-                result["success"] = False
+                verification_result["critical_errors"].append(f"Python 3.11+ required, current version: {python_version.major}.{python_version.minor}")
+                verification_result["success"] = False
             
-            # Check available memory
-            memory = psutil.virtual_memory()
-            if memory.total < 8 * 1024**3:  # Less than 8GB
-                result["warnings"].append(f"Low memory: {memory.total // 1024**3}GB available, 8GB recommended")
+            # Memory availability check
+            system_memory = psutil.virtual_memory()
+            if system_memory.total < 8 * 1024**3:  # Minimum 8GB
+                verification_result["warnings"].append(f"Insufficient memory: {system_memory.total // 1024**3}GB available, 8GB recommended")
             
-            # Check disk space
-            disk = psutil.disk_usage(str(self.project_root))
-            if disk.free < 5 * 1024**3:  # Less than 5GB free
-                result["warnings"].append(f"Low disk space: {disk.free // 1024**3}GB free, 5GB recommended")
+            # Disk space verification
+            disk_usage = psutil.disk_usage(str(self.project_root))
+            if disk_usage.free < 5 * 1024**3:  # Minimum 5GB free
+                verification_result["warnings"].append(f"Insufficient disk space: {disk_usage.free // 1024**3}GB free, 5GB recommended")
             
         except ImportError:
-            result["warnings"].append("psutil not available, limited system check")
+            verification_result["warnings"].append("psutil unavailable, limited system verification")
         
-        return result
+        return verification_result
     
-    def run_cli(self) -> int:
+    def execute_command_line_interface(self) -> int:
         """
-        Run the application in CLI mode.
+        Execute command line interface mode.
         
         Returns:
-            int: Exit code (0 for success, non-zero for failure)
+            int: Exit status code
         """
-        self.logger.info("Starting DocuBot in CLI mode...")
+        self.logger.information("Starting command line interface...")
         
         try:
-            self.print_banner()
+            self.display_application_header()
             
-            # Simple CLI interface
             print("\n" + "="*60)
             print("DocuBot Command Line Interface")
             print("="*60)
             
-            # Show application status
-            status = self.core.get_status()
+            # Display application status
+            application_status = self.core.get_application_status()
             print(f"\nApplication Status:")
-            print(f"  Initialized: {status['initialized']}")
-            print(f"  Components loaded: {len(status['components_loaded'])}")
-            print(f"  Version: {status['config']['version']}")
+            print(f"  Initialization: {application_status['initialized']}")
+            print(f"  Active Components: {len(application_status['components_loaded'])}")
+            print(f"  Version: {application_status['configuration']['version']}")
             
-            if status['warnings']:
-                print(f"\nWarnings:")
-                for warning in status['warnings']:
-                    print(f"  ⚠ {warning}")
+            if application_status['warnings']:
+                print(f"\nSystem Warnings:")
+                for warning in application_status['warnings']:
+                    print(f"  Warning: {warning}")
             
-            # Show available commands
+            # Command interface
             print("\nAvailable Commands:")
-            print("  1. Process a document")
-            print("  2. Ask a question")
-            print("  3. Show system status")
-            print("  4. Exit")
+            print("  1. Process Document")
+            print("  2. Query Documents")
+            print("  3. Display System Status")
+            print("  4. Terminate Application")
             
             while True:
                 try:
-                    choice = input("\nEnter choice (1-4): ").strip()
+                    user_selection = input("\nEnter selection (1-4): ").strip()
                     
-                    if choice == "1":
-                        file_path = input("Enter document path: ").strip()
-                        if file_path and os.path.exists(file_path):
-                            result = self.core.process_document(file_path)
-                            print(f"\nResult: {json.dumps(result, indent=2)}")
+                    if user_selection == "1":
+                        document_path = input("Document file path: ").strip()
+                        if document_path and os.path.exists(document_path):
+                            processing_result = self.core.process_document(document_path)
+                            print(f"\nProcessing Result: {json.dumps(processing_result, indent=2)}")
                         else:
                             print("Error: File not found")
                     
-                    elif choice == "2":
-                        question = input("Enter your question: ").strip()
-                        if question:
-                            result = self.core.ask_question(question)
-                            print(f"\nAnswer: {result.get('answer', 'No answer')}")
-                            if result.get('sources'):
-                                print(f"\nSources: {result['sources']}")
+                    elif user_selection == "2":
+                        user_query = input("Enter query: ").strip()
+                        if user_query:
+                            query_result = self.core.query_documents(user_query)
+                            print(f"\nResponse: {query_result.get('answer', 'No response available')}")
+                            if query_result.get('sources'):
+                                print(f"\nSources: {query_result['sources']}")
                         else:
-                            print("Error: Question cannot be empty")
+                            print("Error: Query cannot be empty")
                     
-                    elif choice == "3":
-                        status = self.core.get_status()
+                    elif user_selection == "3":
+                        status = self.core.get_application_status()
                         print(f"\nSystem Status:")
                         print(json.dumps(status, indent=2))
                     
-                    elif choice == "4":
-                        print("\nExiting CLI...")
+                    elif user_selection == "4":
+                        print("\nTerminating command line interface...")
                         return 0
                     
                     else:
-                        print("Invalid choice. Please enter 1-4.")
+                        print("Invalid selection. Enter 1-4.")
                         
                 except KeyboardInterrupt:
-                    print("\n\nInterrupted by user")
+                    print("\nInterface terminated by user")
                     return 130
                 except Exception as e:
                     print(f"Error: {e}")
             
         except Exception as e:
-            self.logger.error(f"CLI execution error: {e}")
+            self.logger.error(f"Command line interface execution error: {e}")
             self.logger.debug(traceback.format_exc())
             return 1
     
-    def run_desktop(self) -> int:
+    def execute_desktop_interface(self) -> int:
         """
-        Run the application in desktop GUI mode.
+        Execute desktop graphical interface mode.
         
         Returns:
-            int: Exit code (0 for success, non-zero for failure)
+            int: Exit status code
         """
-        self.logger.info("Starting DocuBot in desktop mode...")
+        self.logger.information("Initializing desktop interface...")
         
         try:
-            # Try to import GUI modules
+            # Desktop interface dependencies
             try:
                 import customtkinter as ctk
             except ImportError:
-                self.logger.error("CustomTkinter not installed. Installing...")
-                try:
-                    subprocess.check_call([sys.executable, "-m", "pip", "install", "customtkinter"])
-                    import customtkinter as ctk
-                except Exception as e:
-                    self.logger.error(f"Failed to install CustomTkinter: {e}")
-                    print("CustomTkinter is required for desktop mode.")
-                    print("Install it with: pip install customtkinter")
-                    return 1
+                self.logger.error("CustomTkinter unavailable")
+                print("CustomTkinter required for desktop interface.")
+                print("Installation command: pip install customtkinter")
+                return 1
             
-            # Setup CustomTkinter
+            # Interface configuration
             ctk.set_appearance_mode("dark")
             ctk.set_default_color_theme("blue")
             
-            # Create main window
-            root = ctk.CTk()
-            root.title("DocuBot - Local AI Assistant")
-            root.geometry("1200x800")
+            # Primary application window
+            primary_window = ctk.CTk()
+            primary_window.title("DocuBot - Local AI Assistant")
+            primary_window.geometry("1200x800")
             
-            # Create main frame
-            main_frame = ctk.CTkFrame(root)
-            main_frame.pack(fill="both", expand=True, padx=10, pady=10)
+            # Main interface container
+            main_container = ctk.CTkFrame(primary_window)
+            main_container.pack(fill="both", expand=True, padx=10, pady=10)
             
-            # Header
-            header = ctk.CTkLabel(
-                main_frame,
+            # Application header
+            application_header = ctk.CTkLabel(
+                main_container,
                 text="DocuBot - Local AI Assistant",
                 font=("Arial", 24, "bold")
             )
-            header.pack(pady=20)
+            application_header.pack(pady=20)
             
-            # Status frame
-            status_frame = ctk.CTkFrame(main_frame)
-            status_frame.pack(fill="x", padx=20, pady=10)
+            # Status display
+            status_container = ctk.CTkFrame(main_container)
+            status_container.pack(fill="x", padx=20, pady=10)
             
-            status = self.core.get_status()
-            status_text = f"Status: {'Ready' if status['initialized'] else 'Initializing'}"
-            status_label = ctk.CTkLabel(status_frame, text=status_text, font=("Arial", 14))
-            status_label.pack(pady=10)
+            application_status = self.core.get_application_status()
+            status_display = f"Status: {'Operational' if application_status['initialized'] else 'Initializing'}"
+            status_indicator = ctk.CTkLabel(status_container, text=status_display, font=("Arial", 14))
+            status_indicator.pack(pady=10)
             
-            # Components frame
-            components_frame = ctk.CTkFrame(main_frame)
-            components_frame.pack(fill="x", padx=20, pady=10)
+            # Component information
+            component_container = ctk.CTkFrame(main_container)
+            component_container.pack(fill="x", padx=20, pady=10)
             
-            components_label = ctk.CTkLabel(components_frame, text="Loaded Components:", font=("Arial", 12, "bold"))
-            components_label.pack(anchor="w", padx=10, pady=5)
+            component_label = ctk.CTkLabel(component_container, text="Active Components:", font=("Arial", 12, "bold"))
+            component_label.pack(anchor="w", padx=10, pady=5)
             
-            for component in status.get('components_loaded', []):
-                comp_label = ctk.CTkLabel(components_frame, text=f"• {component}")
-                comp_label.pack(anchor="w", padx=30, pady=2)
+            for component in application_status.get('components_loaded', []):
+                component_display = ctk.CTkLabel(component_container, text=f"• {component}")
+                component_display.pack(anchor="w", padx=30, pady=2)
             
-            # Warning frame
-            if status.get('warnings'):
-                warning_frame = ctk.CTkFrame(main_frame, fg_color="#FFA500")
-                warning_frame.pack(fill="x", padx=20, pady=10)
+            # Warning display
+            if application_status.get('warnings'):
+                warning_container = ctk.CTkFrame(main_container, fg_color="#FFA500")
+                warning_container.pack(fill="x", padx=20, pady=10)
                 
-                warning_label = ctk.CTkLabel(warning_frame, text="Warnings:", font=("Arial", 12, "bold"))
+                warning_label = ctk.CTkLabel(warning_container, text="System Warnings:", font=("Arial", 12, "bold"))
                 warning_label.pack(anchor="w", padx=10, pady=5)
                 
-                for warning in status['warnings'][:3]:  # Show first 3 warnings
-                    warn_label = ctk.CTkLabel(warning_frame, text=f"⚠ {warning}")
-                    warn_label.pack(anchor="w", padx=30, pady=2)
+                for warning in application_status['warnings'][:3]:
+                    warning_display = ctk.CTkLabel(warning_container, text=f"Warning: {warning}")
+                    warning_display.pack(anchor="w", padx=30, pady=2)
             
-            # Button frame
-            button_frame = ctk.CTkFrame(main_frame)
-            button_frame.pack(pady=30)
+            # Function controls
+            control_container = ctk.CTkFrame(main_container)
+            control_container.pack(pady=30)
             
-            # Buttons
-            def open_document():
+            # Document processing control
+            def initiate_document_processing():
                 from tkinter import filedialog
-                file_path = filedialog.askopenfilename(
+                selected_file = filedialog.askopenfilename(
                     title="Select Document",
                     filetypes=[
-                        ("All supported files", "*.pdf *.docx *.txt *.epub *.md *.html"),
-                        ("PDF files", "*.pdf"),
+                        ("All supported formats", "*.pdf *.docx *.txt *.epub *.md *.html"),
+                        ("PDF documents", "*.pdf"),
                         ("Word documents", "*.docx"),
-                        ("Text files", "*.txt"),
-                        ("eBooks", "*.epub"),
-                        ("Markdown", "*.md"),
-                        ("HTML", "*.html")
+                        ("Text documents", "*.txt"),
+                        ("eBook files", "*.epub"),
+                        ("Markdown documents", "*.md"),
+                        ("HTML documents", "*.html")
                     ]
                 )
-                if file_path:
-                    result = self.core.process_document(file_path)
-                    print(f"Document processing result: {result}")
+                if selected_file:
+                    processing_result = self.core.process_document(selected_file)
+                    print(f"Document processing result: {processing_result}")
             
-            def open_chat():
-                # Create chat window
-                chat_window = ctk.CTkToplevel(root)
-                chat_window.title("DocuBot Chat")
-                chat_window.geometry("800x600")
+            # Document interface control
+            def initiate_document_interface():
+                interface_window = ctk.CTkToplevel(primary_window)
+                interface_window.title("DocuBot Document Interface")
+                interface_window.geometry("800x600")
                 
-                chat_frame = ctk.CTkFrame(chat_window)
-                chat_frame.pack(fill="both", expand=True, padx=10, pady=10)
+                interface_container = ctk.CTkFrame(interface_window)
+                interface_container.pack(fill="both", expand=True, padx=10, pady=10)
                 
-                chat_label = ctk.CTkLabel(chat_frame, text="Chat with your documents", font=("Arial", 16))
-                chat_label.pack(pady=10)
+                interface_label = ctk.CTkLabel(interface_container, text="Document Query Interface", font=("Arial", 16))
+                interface_label.pack(pady=10)
                 
-                chat_display = ctk.CTkTextbox(chat_frame, height=400)
-                chat_display.pack(fill="both", expand=True, padx=10, pady=10)
-                chat_display.insert("1.0", "Welcome to DocuBot Chat!\n\nAsk questions about your documents here.\n\n")
+                text_display = ctk.CTkTextbox(interface_container, height=400)
+                text_display.pack(fill="both", expand=True, padx=10, pady=10)
+                text_display.insert("1.0", "Document Query Interface\n\nSubmit queries regarding your documents.\n\n")
                 
-                input_frame = ctk.CTkFrame(chat_frame)
-                input_frame.pack(fill="x", padx=10, pady=10)
+                input_container = ctk.CTkFrame(interface_container)
+                input_container.pack(fill="x", padx=10, pady=10)
                 
-                question_entry = ctk.CTkEntry(input_frame, placeholder_text="Type your question here...")
-                question_entry.pack(side="left", fill="x", expand=True, padx=(0, 10))
+                query_input = ctk.CTkEntry(input_container, placeholder_text="Enter document query...")
+                query_input.pack(side="left", fill="x", expand=True, padx=(0, 10))
                 
-                def send_question():
-                    question = question_entry.get()
-                    if question:
-                        chat_display.insert("end", f"\n\nYou: {question}\n")
-                        question_entry.delete(0, "end")
+                def submit_query():
+                    query_text = query_input.get()
+                    if query_text:
+                        text_display.insert("end", f"\n\nQuery: {query_text}\n")
+                        query_input.delete(0, "end")
                         
-                        # Get answer
-                        result = self.core.ask_question(question)
-                        answer = result.get('answer', 'No answer available')
-                        chat_display.insert("end", f"DocuBot: {answer}\n")
-                        chat_display.see("end")
+                        query_response = self.core.query_documents(query_text)
+                        response_text = query_response.get('answer', 'No response available')
+                        text_display.insert("end", f"Response: {response_text}\n")
+                        text_display.see("end")
                 
-                send_button = ctk.CTkButton(input_frame, text="Send", command=send_question)
-                send_button.pack(side="right")
+                submit_button = ctk.CTkButton(input_container, text="Submit", command=submit_query)
+                submit_button.pack(side="right")
             
-            # Add document button
-            add_doc_btn = ctk.CTkButton(
-                button_frame,
-                text="Add Document",
-                command=open_document,
+            # Control buttons
+            document_button = ctk.CTkButton(
+                control_container,
+                text="Process Document",
+                command=initiate_document_processing,
                 width=200,
                 height=40
             )
-            add_doc_btn.pack(pady=10)
+            document_button.pack(pady=10)
             
-            # Chat button
-            chat_btn = ctk.CTkButton(
-                button_frame,
-                text="Chat with Documents",
-                command=open_chat,
+            query_button = ctk.CTkButton(
+                control_container,
+                text="Document Query",
+                command=initiate_document_interface,
                 width=200,
                 height=40
             )
-            chat_btn.pack(pady=10)
+            query_button.pack(pady=10)
             
-            # Exit button
-            def exit_app():
+            # Application termination
+            def terminate_application():
                 self.shutdown()
-                root.quit()
+                primary_window.quit()
             
-            exit_btn = ctk.CTkButton(
-                button_frame,
-                text="Exit",
-                command=exit_app,
+            termination_button = ctk.CTkButton(
+                control_container,
+                text="Terminate Application",
+                command=terminate_application,
                 width=200,
                 height=40,
                 fg_color="#FF5555"
             )
-            exit_btn.pack(pady=10)
+            termination_button.pack(pady=10)
             
-            # Footer
-            footer = ctk.CTkLabel(
-                main_frame,
-                text=f"Version {status['config']['version']} | Status: {len(status['components_loaded'])}/{4} components loaded",
+            # Application footer
+            footer_text = f"Version {application_status['configuration']['version']} | Active Components: {len(application_status['components_loaded'])}/4"
+            application_footer = ctk.CTkLabel(
+                main_container,
+                text=footer_text,
                 font=("Arial", 10)
             )
-            footer.pack(side="bottom", pady=10)
+            application_footer.pack(side="bottom", pady=10)
             
-            # Start main loop
-            self.logger.info("Starting main event loop...")
-            self.running = True
-            root.mainloop()
+            # Main event loop
+            self.logger.information("Starting desktop interface event loop...")
+            self.application_running = True
+            primary_window.mainloop()
             
-            self.logger.info("Desktop application terminated")
+            self.logger.information("Desktop interface terminated")
             return 0
             
         except Exception as e:
-            self.logger.error(f"Desktop execution error: {e}")
+            self.logger.error(f"Desktop interface execution error: {e}")
             self.logger.debug(traceback.format_exc())
             return 1
     
-    def run(self, mode: str = "desktop") -> int:
+    def execute_web_interface(self) -> int:
         """
-        Main application entry point.
+        Execute web interface mode.
+        
+        Returns:
+            int: Exit status code
+        """
+        self.logger.information("Initializing web interface...")
+        
+        try:
+            # Web interface dependency verification
+            try:
+                import streamlit
+            except ImportError:
+                self.logger.error("Streamlit unavailable")
+                print("Streamlit required for web interface.")
+                print("Installation command: pip install streamlit")
+                return 1
+            
+            # Web application launch
+            web_application_path = self.project_root / "src" / "ui" / "web" / "streamlit_app.py"
+            if web_application_path.exists():
+                self.logger.information("Launching Streamlit web interface...")
+                subprocess.run(["streamlit", "run", str(web_application_path)])
+                return 0
+            else:
+                self.logger.error(f"Web application not found: {web_application_path}")
+                print("Web interface implementation incomplete.")
+                return 1
+                
+        except Exception as e:
+            self.logger.error(f"Web interface execution error: {e}")
+            self.logger.debug(traceback.format_exc())
+            return 1
+    
+    def execute(self, execution_mode: str = "desktop") -> int:
+        """
+        Primary application execution method.
         
         Args:
-            mode: Execution mode - "desktop", "cli", or "web"
+            execution_mode: Application execution mode
             
         Returns:
-            int: Exit code (0 for success, non-zero for failure)
+            int: Exit status code
         """
         try:
-            # Initialize application
+            # Application initialization
             if not self.initialize():
                 return 1
             
-            self.logger.info(f"Starting DocuBot in {mode} mode")
+            self.logger.information(f"Starting DocuBot in {execution_mode} mode")
             
-            # Run in specified mode
-            if mode == "cli":
-                return self.run_cli()
-            elif mode == "web":
-                return self.run_web()
-            elif mode == "desktop":
-                return self.run_desktop()
+            # Mode-specific execution
+            if execution_mode == "cli":
+                return self.execute_command_line_interface()
+            elif execution_mode == "web":
+                return self.execute_web_interface()
+            elif execution_mode == "desktop":
+                return self.execute_desktop_interface()
             else:
-                self.logger.error(f"Unknown mode: {mode}")
-                print(f"Error: Unknown mode '{mode}'. Use 'desktop', 'cli', or 'web'.", file=sys.stderr)
+                self.logger.error(f"Invalid execution mode: {execution_mode}")
+                print(f"Error: Invalid execution mode '{execution_mode}'. Valid modes: desktop, cli, web", file=sys.stderr)
                 return 1
                 
         except KeyboardInterrupt:
             if self.logger:
-                self.logger.info("Application interrupted by user")
+                self.logger.information("Application terminated by user")
             return 130
         except Exception as e:
             if self.logger:
-                self.logger.error(f"Unexpected error: {e}")
+                self.logger.error(f"Execution error: {e}")
                 self.logger.debug(traceback.format_exc())
             return 1
         finally:
             self.shutdown()
     
-    def run_web(self) -> int:
-        """
-        Run the application in web mode.
-        
-        Returns:
-            int: Exit code (0 for success, non-zero for failure)
-        """
-        self.logger.info("Starting DocuBot in web mode...")
-        
-        try:
-            # Check for Streamlit
-            try:
-                import streamlit
-            except ImportError:
-                self.logger.error("Streamlit not installed")
-                print("Streamlit is required for web mode.")
-                print("Install it with: pip install streamlit")
-                return 1
-            
-            # Launch Streamlit app
-            web_app_path = self.project_root / "src" / "ui" / "web" / "app.py"
-            if web_app_path.exists():
-                self.logger.info("Launching Streamlit web interface...")
-                subprocess.run(["streamlit", "run", str(web_app_path)])
-                return 0
-            else:
-                self.logger.error(f"Web app not found at {web_app_path}")
-                print("Web interface not yet implemented.")
-                return 1
-                
-        except Exception as e:
-            self.logger.error(f"Web execution error: {e}")
-            self.logger.debug(traceback.format_exc())
-            return 1
-    
     def shutdown(self):
-        """Gracefully shutdown the application."""
-        if not self.running:
+        """Gracefully terminate application."""
+        if not self.application_running:
             return
         
-        self.running = False
+        self.application_running = False
         if self.logger:
-            self.logger.info("Initiating application shutdown...")
+            self.logger.information("Initiating application termination...")
         
         try:
-            # Shutdown core components
+            # Core component termination
             if self.core:
                 self.core.shutdown()
             
             if self.logger:
-                self.logger.info("Application shutdown completed")
+                self.logger.information("Application termination complete")
             
         except Exception as e:
             if self.logger:
-                self.logger.error(f"Error during shutdown: {e}")
+                self.logger.error(f"Termination error: {e}")
     
-    def print_banner(self):
-        """Print application banner."""
-        banner = f"""
+    def display_application_header(self):
+        """Display application information header."""
+        application_header = f"""
 {'='*60}
-              DocuBot - Local AI Assistant
-                  Version 1.0.0
+                DocuBot - Local AI Assistant
+                     Version 1.0.0
 {'='*60}
 
 Features:
-• 100% Local & Private
-• Multiple Document Formats
+• Complete Local Processing
+• Multi-format Document Support
 • Intelligent Document Processing
-• Local AI (Ollama Integration)
-• Vector Search with ChromaDB
-• Cross-Platform Support
+• Local AI Integration
+• Vector-based Document Search
+• Cross-platform Compatibility
 
-System: {platform.system()} {platform.release()}
-Python: {platform.python_version()}
+System Information:
+  Operating System: {platform.system()} {platform.release()}
+  Python Version: {platform.python_version()}
 
 {'='*60}
         """
-        print(banner)
+        print(application_header)
 
 
 def main():
     """
-    Main entry point for DocuBot application.
+    Primary application entry point.
     
-    Command line usage:
+    Command line interface:
         python app.py [mode] [options]
     
-    Modes:
-        desktop    Launch desktop GUI (default)
-        cli        Launch command line interface
-        web        Launch web interface
+    Execution Modes:
+        desktop    Desktop graphical interface (default)
+        cli        Command line interface
+        web        Web browser interface
     
-    Options:
-        --help     Show this help message
-        --version  Show version information
-        --config   Specify custom config file
+    Command Options:
+        --help     Display command help
+        --version  Display version information
+        --config   Specify custom configuration file
+        --verbose  Enable verbose logging
     
-    Examples:
+    Usage Examples:
         python app.py
         python app.py desktop
         python app.py cli
-        python app.py web --config /path/to/config.yaml
+        python app.py web
+        python app.py --config custom_config.yaml
     """
     
-    parser = argparse.ArgumentParser(
+    argument_parser = argparse.ArgumentParser(
         description="DocuBot - Local AI Knowledge Assistant",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Examples:
-  python app.py                    # Launch desktop GUI
-  python app.py desktop            # Launch desktop GUI
-  python app.py cli                # Launch command line interface
-  python app.py web                # Launch web interface
-  python app.py --config custom.yaml  # Use custom configuration
+Usage Examples:
+  python app.py                    # Desktop interface
+  python app.py desktop            # Desktop interface
+  python app.py cli                # Command line interface
+  python app.py web                # Web interface
+  python app.py --config custom.yaml  # Custom configuration
         """
     )
     
-    parser.add_argument(
+    argument_parser.add_argument(
         "mode",
         nargs="?",
         default="desktop",
         choices=["desktop", "cli", "web"],
-        help="Execution mode (default: desktop)"
+        help="Application execution mode (default: desktop)"
     )
     
-    parser.add_argument(
+    argument_parser.add_argument(
         "--config",
         type=str,
-        help="Path to custom configuration file"
+        help="Custom configuration file path"
     )
     
-    parser.add_argument(
+    argument_parser.add_argument(
         "--version",
         action="version",
         version="DocuBot 1.0.0"
     )
     
-    parser.add_argument(
+    argument_parser.add_argument(
         "--verbose",
         action="store_true",
-        help="Enable verbose logging"
+        help="Enable verbose logging output"
     )
     
-    args = parser.parse_args()
+    parsed_arguments = argument_parser.parse_args()
     
-    # Create and run application
-    app = DocuBotApplication()
+    # Application instantiation and execution
+    application_instance = DocuBotApplication()
     
-    # Run application
-    exit_code = app.run(args.mode)
+    # Execute application with specified mode
+    exit_status = application_instance.execute(parsed_arguments.mode)
     
-    # Exit with appropriate code
-    sys.exit(exit_code)
+    # Application termination
+    sys.exit(exit_status)
 
 
 if __name__ == "__main__":
