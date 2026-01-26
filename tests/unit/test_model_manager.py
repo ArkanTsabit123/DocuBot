@@ -1,943 +1,900 @@
-
-# docubot/src/ai_engine/model_manager.py 
+# docubot/tests/unit/test_model_manager.py
 
 """
-Model Manager for DocuBot - Handles model downloading, validation, and management.
+Unit tests for Model Manager.
+Tests model downloading, validation, and management functionality.
 """
 
 import os
+import sys
 import json
-import time
-import logging
-import subprocess
+import shutil
+import tempfile
+import unittest
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Generator, Union
-from datetime import datetime
-import psutil
-import torch
+from unittest.mock import Mock, patch, MagicMock
 
-logger = logging.getLogger(__name__)
+# Mock ALL dependencies before importing
+mock_modules = {
+    'psutil': MagicMock(),
+    'torch': MagicMock(),
+    'requests': MagicMock(),
+    'tqdm': MagicMock(),
+    'sentence_transformers': MagicMock(),
+    'chromadb': MagicMock(),
+    'ollama': MagicMock(),
+    'packaging': MagicMock(),
+    'packaging.version': MagicMock()
+}
 
-# LLMClient import dynamically
-def _import_llm_client():
-    """Dynamically import LLMClient with multiple fallbacks."""
-    try:
-        # absolute import from src
-        from src.ai_engine.llm_client import LLMClient
-        return LLMClient, True
-    except ImportError:
-        try:
-            # relative import
-            from .llm_client import LLMClient
-            return LLMClient, True
-        except ImportError:
-            try:
-                # direct import
-                import sys
-                current_dir = os.path.dirname(os.path.abspath(__file__))
-                sys.path.insert(0, current_dir)
-                from llm_client import LLMClient
-                return LLMClient, True
-            except ImportError as e:
-                logger.warning(f"LLMClient not available: {e}")
-                return None, False
+# Apply mocks
+for mod_name, mock_obj in mock_modules.items():
+    sys.modules[mod_name] = mock_obj
 
-def _import_embedding_service():
-    """Dynamically import embedding service."""
-    try:
-        from .embedding_service import get_embedding_service
-        return get_embedding_service, True
-    except ImportError:
-        try:
-            from src.ai_engine.embedding_service import get_embedding_service
-            return get_embedding_service, True
-        except ImportError as e:
-            logger.warning(f"EmbeddingService not available: {e}")
-            return None, False
+# Now import the module
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+from src.ai_engine.model_manager import (
+    ModelManager,
+    ModelMetadata,
+    ModelRequirements,
+    ModelDownloader,
+    ModelRegistry,
+    SystemResourceMonitor,
+    get_model_manager
+)
 
 
-class ModelManager:
-    """
-    Manages AI models for DocuBot including:
-    - LLM models (via Ollama)
-    - Embedding models (Sentence Transformers)
-    - Model validation and downloading
-    - System resource checking
-    """
-    
-    # Embedding models database
-    EMBEDDING_MODELS = {
-        "all-MiniLM-L6-v2": {
-            "display_name": "MiniLM L6 v2",
-            "description": "Fast and efficient embedding model (384 dimensions)",
-            "dimensions": 384,
-            "context_length": 256,
-            "size_mb": 90,
-            "speed": "Fast",
-            "accuracy": "Good",
-            "languages": ["en"],
-            "default": True
-        },
-        "all-mpnet-base-v2": {
-            "display_name": "MPNet Base v2",
-            "description": "High-quality embedding model (768 dimensions)",
-            "dimensions": 768,
-            "context_length": 384,
-            "size_mb": 420,
-            "speed": "Medium",
-            "accuracy": "Excellent",
-            "languages": ["en"],
-            "default": False
-        },
-        "paraphrase-multilingual-MiniLM-L12-v2": {
-            "display_name": "Multilingual MiniLM L12 v2",
-            "description": "Multilingual embedding model (384 dimensions)",
-            "dimensions": 384,
-            "context_length": 128,
-            "size_mb": 480,
-            "speed": "Medium",
-            "accuracy": "Good",
-            "languages": ["en", "id", "es", "fr", "de", "zh"],
-            "default": False
+class TestModelMetadata(unittest.TestCase):
+    def test_model_metadata_creation(self):
+        requirements = ModelRequirements(
+            ram_gb=8.0,
+            storage_gb=5.0,
+            cpu_cores=4
+        )
+
+        metadata = ModelMetadata(
+            name="test-model",
+            display_name="Test Model",
+            model_type="embedding",
+            provider="sentence-transformers",
+            description="Test embedding model",
+            embedding_dimensions=384,
+            requirements=requirements
+        )
+
+        self.assertEqual(metadata.name, "test-model")
+        self.assertEqual(metadata.model_type, "embedding")
+        self.assertEqual(metadata.provider, "sentence-transformers")
+        self.assertEqual(metadata.embedding_dimensions, 384)
+        self.assertFalse(metadata.is_downloaded)
+        self.assertIsInstance(metadata.requirements, ModelRequirements)
+
+    def test_model_metadata_to_dict(self):
+        requirements = ModelRequirements(
+            ram_gb=8.0,
+            storage_gb=5.0
+        )
+
+        metadata = ModelMetadata(
+            name="test-model",
+            display_name="Test Model",
+            model_type="embedding",
+            provider="test-provider",
+            description="Test model",
+            requirements=requirements
+        )
+
+        result = metadata.to_dict()
+
+        self.assertIn("name", result)
+        self.assertIn("display_name", result)
+        self.assertIn("model_type", result)
+        self.assertIn("requirements", result)
+        self.assertEqual(result["name"], "test-model")
+        self.assertEqual(result["model_type"], "embedding")
+
+    def test_model_metadata_update_usage(self):
+        metadata = ModelMetadata(
+            name="test-model",
+            display_name="Test Model",
+            model_type="embedding",
+            provider="test-provider",
+            description="Test model"
+        )
+
+        initial_count = metadata.usage_count
+        metadata.update_usage()
+
+        self.assertEqual(metadata.usage_count, initial_count + 1)
+        self.assertIsNotNone(metadata.last_used)
+        self.assertIsNotNone(metadata.updated_at)
+
+
+class TestModelRequirements(unittest.TestCase):
+    def test_model_requirements_creation(self):
+        requirements = ModelRequirements(
+            ram_gb=16.0,
+            storage_gb=10.0,
+            cpu_cores=8,
+            gpu_vram_gb=12.0,
+            python_version="3.11",
+            dependencies=["torch", "transformers"]
+        )
+
+        self.assertEqual(requirements.ram_gb, 16.0)
+        self.assertEqual(requirements.storage_gb, 10.0)
+        self.assertEqual(requirements.cpu_cores, 8)
+        self.assertEqual(requirements.gpu_vram_gb, 12.0)
+        self.assertEqual(requirements.python_version, "3.11")
+        self.assertEqual(len(requirements.dependencies), 2)
+
+    def test_model_requirements_to_dict(self):
+        requirements = ModelRequirements(
+            ram_gb=8.0,
+            storage_gb=5.0,
+            cpu_cores=4
+        )
+
+        result = requirements.to_dict()
+
+        self.assertIn("ram_gb", result)
+        self.assertIn("storage_gb", result)
+        self.assertIn("cpu_cores", result)
+        self.assertEqual(result["ram_gb"], 8.0)
+        self.assertEqual(result["storage_gb"], 5.0)
+
+
+class TestModelManager(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = Path(tempfile.mkdtemp())
+
+        self.config = {
+            'download_dir': str(self.temp_dir / "downloads"),
+            'models_dir': str(self.temp_dir / "models")
         }
-    }
-    
-    # LLM models database 
-    LLM_MODELS = {
-        "llama2:7b": {
-            "display_name": "Llama 2 7B",
-            "description": "Meta's Llama 2 7B parameter model",
-            "ram_required_gb": 8,
-            "storage_required_gb": 4.2,
-            "context_window": 4096,
-            "default": True
-        },
-        "mistral:7b": {
-            "display_name": "Mistral 7B",
-            "description": "Mistral AI's 7B parameter model",
-            "ram_required_gb": 8,
-            "storage_required_gb": 4.1,
-            "context_window": 8192,
-            "default": False
-        },
-        "neural-chat:7b": {
-            "display_name": "Neural Chat 7B",
-            "description": "Intel's fine-tuned neural chat model",
-            "ram_required_gb": 8,
-            "storage_required_gb": 4.3,
-            "context_window": 4096,
-            "default": False
-        }
-    }
-    
-    def __init__(self, config=None):
-        """
-        Initialize ModelManager.
-        
-        Args:
-            config: AppConfig instance
-        """
-        self.config = config
-        self._llm_client = None
-        self._embedding_service = None
-        self._llm_client_class = None
-        self._get_embedding_service_func = None
-        
-        # Try to import classes
-        self._llm_client_class, _ = _import_llm_client()
-        self._get_embedding_service_func, _ = _import_embedding_service()
-        
-        logger.info("ModelManager initialized")
-    
-    @property
-    def llm_client(self):
-        """Lazy load LLM client."""
-        if self._llm_client is None and self._llm_client_class:
-            try:
-                self._llm_client = self._llm_client_class()
-                logger.info("LLMClient initialized successfully")
-            except Exception as e:
-                logger.error(f"Failed to initialize LLMClient: {e}")
-                self._llm_client = None
-        return self._llm_client
-    
-    @property
-    def embedding_service(self):
-        """Lazy load embedding service."""
-        if self._embedding_service is None and self._get_embedding_service_func:
-            try:
-                self._embedding_service = self._get_embedding_service_func(self.config)
-                logger.info("EmbeddingService initialized successfully")
-            except Exception as e:
-                logger.error(f"Failed to initialize EmbeddingService: {e}")
-                self._embedding_service = None
-        return self._embedding_service
-    
-    def get_available_llm_models(self) -> List[Dict[str, Any]]:
-        """Get available LLM models from Ollama."""
-        if not self.llm_client:
-            logger.warning("LLM client not available, returning static list")
-            return self._get_static_llm_models()
-        
-        try:
-            return self.llm_client.get_available_models(refresh_cache=True)
-        except Exception as e:
-            logger.error(f"Error getting LLM models: {e}")
-            return self._get_static_llm_models()
-    
-    def _get_static_llm_models(self) -> List[Dict[str, Any]]:
-        """Get static LLM model information."""
-        models = []
-        for model_id, model_info in self.LLM_MODELS.items():
-            models.append({
-                'name': model_id,
-                'display_name': model_info['display_name'],
-                'description': model_info['description'],
-                'ram_required_gb': model_info['ram_required_gb'],
-                'storage_required_gb': model_info['storage_required_gb'],
-                'context_window': model_info['context_window'],
-                'is_default': model_info['default'],
-                'is_supported': True,
-                'is_current': False  # Can't determine without LLM client
-            })
-        return models
-    
-    def get_available_embedding_models(self) -> List[Dict[str, Any]]:
-        """Get available embedding models."""
-        models = []
-        
-        for model_id, model_info in self.EMBEDDING_MODELS.items():
-            # Check if model is downloaded
-            is_downloaded = self._is_embedding_model_downloaded(model_id)
-            
-            models.append({
-                'name': model_id,
-                'display_name': model_info['display_name'],
-                'description': model_info['description'],
-                'dimensions': model_info['dimensions'],
-                'context_length': model_info['context_length'],
-                'size_mb': model_info['size_mb'],
-                'speed': model_info['speed'],
-                'accuracy': model_info['accuracy'],
-                'languages': model_info['languages'],
-                'is_default': model_info['default'],
-                'downloaded': is_downloaded,
-                'can_download': True
-            })
-        
-        return models
-    
-    def _is_embedding_model_downloaded(self, model_name: str) -> bool:
-        """Check if embedding model is downloaded locally."""
-        if not self.config or not hasattr(self.config, 'paths'):
-            return False
-        
-        try:
-            # Get models directory from config or use default
-            if hasattr(self.config.paths, 'models_dir'):
-                models_dir = Path(self.config.paths.models_dir)
-            else:
-                models_dir = Path.home() / ".docubot" / "models"
-            
-            embedding_dir = models_dir / "sentence-transformers" / model_name
-            
-            # Check if directory exists and has necessary files
-            if not embedding_dir.exists():
-                return False
-            
-            # Check for essential files
-            required_files = ['config.json']
-            existing_files = [f.name for f in embedding_dir.iterdir() if f.is_file()]
-            
-            # Need at least config.json and one model file
-            if 'config.json' not in existing_files:
-                return False
-            
-            # Check for model files
-            model_files = [f for f in existing_files 
-                          if any(keyword in f.lower() 
-                                for keyword in ['model', 'pytorch', 'tensorflow', 'onnx'])]
-            
-            return len(model_files) > 0
-            
-        except Exception as e:
-            logger.debug(f"Error checking model {model_name}: {e}")
-            return False
-    
-    def validate_model_download(self, model_name: str, model_type: str = 'llm') -> Dict[str, Any]:
-        """
-        Validate if a model can be downloaded.
-        
-        Args:
-            model_name: Name of the model
-            model_type: 'llm' or 'embedding'
-        
-        Returns:
-            Validation results
-        """
-        result = {
-            'success': False,
-            'model': model_name,
-            'type': model_type,
-            'message': '',
-            'can_download': False,
-            'requirements_met': False,
-            'timestamp': datetime.now().isoformat()
-        }
-        
-        try:
-            if model_type == 'llm':
-                # Check if model is supported
-                if model_name not in self.LLM_MODELS:
-                    result['message'] = f'LLM model {model_name} is not supported'
-                    return result
-                
-                model_info = self.LLM_MODELS[model_name]
-                
-                # Check RAM requirements
-                ram_ok = self.check_ram_requirements(model_info['ram_required_gb'])
-                
-                # Check disk space
-                disk_ok = self.check_disk_space(model_info['storage_required_gb'])
-                
-                # Check Ollama installation
-                ollama_ok = self.check_ollama_installed()
-                
-                result['requirements'] = {
-                    'ram_gb': model_info['ram_required_gb'],
-                    'storage_gb': model_info['storage_required_gb'],
-                    'ram_ok': ram_ok,
-                    'disk_ok': disk_ok,
-                    'ollama_ok': ollama_ok
+
+        (self.temp_dir / "downloads").mkdir(parents=True, exist_ok=True)
+        (self.temp_dir / "models").mkdir(parents=True, exist_ok=True)
+
+    def tearDown(self):
+        if self.temp_dir.exists():
+            shutil.rmtree(self.temp_dir)
+
+    def test_initialization(self):
+        manager = ModelManager(self.config)
+
+        self.assertIsNotNone(manager.registry)
+        self.assertIsNotNone(manager.downloader)
+        self.assertIsNotNone(manager.resource_monitor)
+        self.assertIsInstance(manager.active_models, dict)
+
+    @patch('src.ai_engine.model_manager.subprocess.run')
+    def test_check_ollama_available(self, mock_subprocess):
+        manager = ModelManager(self.config)
+
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "ollama version 0.1.0"
+        mock_subprocess.return_value = mock_result
+
+        self.assertTrue(manager._check_ollama_available())
+
+        mock_subprocess.side_effect = FileNotFoundError()
+        self.assertFalse(manager._check_ollama_available())
+
+    def test_get_available_models(self):
+        manager = ModelManager(self.config)
+
+        all_models = manager.get_available_models()
+        self.assertIsInstance(all_models, list)
+
+        llm_models = manager.get_available_models('llm')
+        self.assertGreater(len(llm_models), 0)
+
+        embedding_models = manager.get_available_models('embedding')
+        self.assertGreater(len(embedding_models), 0)
+
+    @patch('src.ai_engine.model_manager.subprocess.run')
+    def test_check_model_downloaded_llm(self, mock_subprocess):
+        manager = ModelManager(self.config)
+        manager.ollama_available = True
+
+        model = ModelMetadata(
+            name="llama2:7b",
+            display_name="Llama 2 7B",
+            model_type="llm",
+            provider="ollama",
+            description="Test LLM"
+        )
+
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "NAME\nllama2:7b\nmistral:7b"
+        mock_subprocess.return_value = mock_result
+
+        self.assertTrue(manager._check_model_downloaded(model))
+
+        mock_result.stdout = "NAME\nmistral:7b"
+        self.assertFalse(manager._check_model_downloaded(model))
+
+    @patch('src.ai_engine.model_manager.SentenceTransformer')
+    def test_check_model_downloaded_embedding(self, mock_sentence_transformer):
+        manager = ModelManager(self.config)
+
+        model = ModelMetadata(
+            name="all-MiniLM-L6-v2",
+            display_name="MiniLM L6 v2",
+            model_type="embedding",
+            provider="sentence-transformers",
+            description="Test embedding"
+        )
+
+        mock_model = Mock()
+        mock_sentence_transformer.return_value = mock_model
+
+        self.assertTrue(manager._check_model_downloaded(model))
+
+        mock_sentence_transformer.side_effect = Exception("Model not found")
+        self.assertFalse(manager._check_model_downloaded(model))
+
+    @patch('src.ai_engine.model_manager.psutil.disk_usage')
+    def test_check_disk_space(self, mock_disk_usage):
+        manager = ModelManager(self.config)
+
+        mock_usage = Mock()
+        mock_usage.free = 20 * (1024 ** 3)
+        mock_disk_usage.return_value = mock_usage
+
+        self.assertTrue(manager._check_disk_space(10.0))
+        self.assertFalse(manager._check_disk_space(30.0))
+
+    def test_get_model_info(self):
+        manager = ModelManager(self.config)
+
+        result = manager.get_model_info("all-MiniLM-L6-v2", "embedding")
+
+        self.assertTrue(result['success'])
+        self.assertEqual(result['model'], "all-MiniLM-L6-v2")
+        self.assertEqual(result['type'], 'embedding')
+        self.assertIn('display_name', result)
+        self.assertIn('description', result)
+        self.assertIn('requirements_check', result)
+
+        result = manager.get_model_info("non-existent-model", "embedding")
+        self.assertFalse(result['success'])
+        self.assertIn('error', result)
+
+    @patch('src.ai_engine.model_manager.subprocess.run')
+    def test_validate_model_files_llm(self, mock_subprocess):
+        manager = ModelManager(self.config)
+        manager.ollama_available = True
+
+        mock_result = Mock()
+        mock_result.returncode = 0
+        mock_result.stdout = "NAME\nllama2:7b\nmistral:7b"
+        mock_subprocess.return_value = mock_result
+
+        result = manager.validate_model_files("llama2:7b", "llm")
+
+        self.assertTrue(result['success'])
+        self.assertTrue(result['valid'])
+        self.assertEqual(result['model_name'], "llama2:7b")
+
+        mock_result.stdout = "NAME\nmistral:7b"
+        result = manager.validate_model_files("llama2:7b", "llm")
+
+        self.assertTrue(result['success'])
+        self.assertFalse(result['valid'])
+
+    @patch('src.ai_engine.model_manager.SentenceTransformer')
+    def test_validate_model_files_embedding(self, mock_sentence_transformer):
+        manager = ModelManager(self.config)
+
+        mock_model = Mock()
+        mock_sentence_transformer.return_value = mock_model
+
+        result = manager.validate_model_files("all-MiniLM-L6-v2", "embedding")
+
+        self.assertTrue(result['success'])
+        self.assertTrue(result['valid'])
+        self.assertEqual(result['model_name'], "all-MiniLM-L6-v2")
+
+        mock_sentence_transformer.side_effect = Exception("Model not found")
+        result = manager.validate_model_files("all-MiniLM-L6-v2", "embedding")
+
+        self.assertFalse(result['success'])
+        self.assertFalse(result['valid'])
+
+    def test_validate_model_download(self):
+        manager = ModelManager(self.config)
+
+        with patch.object(manager, '_check_disk_space', return_value=True):
+            with patch.object(manager.resource_monitor, 'check_requirements') as mock_check:
+                mock_check.return_value = {
+                    'success': True,
+                    'requirements_met': True,
+                    'details': {}
                 }
-                
-                result['requirements_met'] = ram_ok and disk_ok and ollama_ok
-                result['can_download'] = result['requirements_met']
-                result['success'] = True
-                result['message'] = (
-                    f"Model {model_name} can be downloaded" 
-                    if result['requirements_met'] 
-                    else "System requirements not met"
-                )
-                
-            elif model_type == 'embedding':
-                # Check if model is supported
-                if model_name not in self.EMBEDDING_MODELS:
-                    result['message'] = f'Embedding model {model_name} is not supported'
-                    return result
-                
-                model_info = self.EMBEDDING_MODELS[model_name]
-                required_space_gb = model_info['size_mb'] / 1024
-                
-                # Check disk space
-                disk_ok = self.check_disk_space(required_space_gb)
-                
-                # Check RAM for embeddings (less strict)
-                ram_ok = self.check_ram_requirements(4)  # 4GB minimum for embeddings
-                
-                result['requirements'] = {
-                    'ram_gb': 4,
-                    'storage_gb': required_space_gb,
-                    'ram_ok': ram_ok,
-                    'disk_ok': disk_ok
-                }
-                
-                result['requirements_met'] = disk_ok and ram_ok
-                result['can_download'] = result['requirements_met']
-                result['success'] = True
-                result['message'] = (
-                    f"Embedding model {model_name} can be downloaded"
-                    if result['requirements_met']
-                    else "Insufficient disk space or RAM"
-                )
-                result['model_info'] = {
-                    'dimensions': model_info['dimensions'],
-                    'languages': model_info['languages'],
-                    'speed': model_info['speed']
-                }
-                
-            else:
-                result['message'] = f'Unknown model type: {model_type}'
-        
-        except Exception as e:
-            result['message'] = f'Validation error: {str(e)}'
-            logger.error(f"Model validation error for {model_name}: {e}")
-        
-        return result
-    
-    def check_disk_space(self, min_gb: float = 1.0) -> bool:
-        """
-        Check if sufficient disk space is available.
-        
-        Args:
-            min_gb: Minimum GB required
-        
-        Returns:
-            True if sufficient space available
-        """
-        try:
-            # Determine path to check
-            if self.config and hasattr(self.config, 'paths') and hasattr(self.config.paths, 'models_dir'):
-                check_path = Path(self.config.paths.models_dir)
-            else:
-                check_path = Path.home() / ".docubot"
-            
-            # Create directory if it doesn't exist
-            check_path.mkdir(parents=True, exist_ok=True)
-            
-            disk_usage = psutil.disk_usage(str(check_path))
-            free_gb = disk_usage.free / (1024 ** 3)
-            
-            logger.debug(f"Disk check: {free_gb:.2f}GB free, need {min_gb}GB")
-            return free_gb >= min_gb
-        
-        except Exception as e:
-            logger.error(f"Error checking disk space: {e}")
-            return False
 
-    def check_ram_requirements(self, min_gb: float = 7.0) -> bool:  # Ubah dari 8.0 ke 7.0
-        """
-        Check if system meets RAM requirements.
+                result = manager.validate_model_download("all-MiniLM-L6-v2", "embedding")
+
+                self.assertTrue(result['success'])
+                self.assertTrue(result['valid'])
+                self.assertEqual(result['model_name'], "all-MiniLM-L6-v2")
+                self.assertIn('requirements_check', result)
+                self.assertIn('disk_space_ok', result)
+
+    def test_set_active_model(self):
+        manager = ModelManager(self.config)
+
+        with patch.object(manager, '_check_model_downloaded', return_value=True):
+            success = manager.set_active_model("all-MiniLM-L6-v2", "embedding")
+
+            self.assertTrue(success)
+            self.assertIn("embedding", manager.active_models)
+            active_model = manager.get_active_model("embedding")
+            self.assertEqual(active_model.name, "all-MiniLM-L6-v2")
+
+            self.assertIn("all-MiniLM-L6-v2", manager.model_usage)
+            self.assertEqual(manager.model_usage["all-MiniLM-L6-v2"]['activation_count'], 1)
+
+    def test_get_active_model(self):
+        manager = ModelManager(self.config)
+
+        result = manager.get_active_model("embedding")
+        self.assertIsNone(result)
+
+        with patch.object(manager, '_check_model_downloaded', return_value=True):
+            manager.set_active_model("all-MiniLM-L6-v2", "embedding")
+
+            result = manager.get_active_model("embedding")
+            self.assertIsNotNone(result)
+            self.assertEqual(result.name, "all-MiniLM-L6-v2")
+
+    def test_format_file_size(self):
+        manager = ModelManager(self.config)
+
+        test_cases = [
+            (0, "0 B"),
+            (500, "500.00 B"),
+            (1500, "1.46 KB"),
+            (1500000, "1.43 MB"),
+            (1500000000, "1.40 GB"),
+            (1500000000000, "1.36 TB")
+        ]
+
+        for size_bytes, expected in test_cases:
+            result = manager.format_file_size(size_bytes)
+            self.assertEqual(result, expected)
+
+    def test_health_check(self):
+        manager = ModelManager(self.config)
+
+        with patch.object(manager, 'get_system_resources') as mock_resources:
+            with patch.object(manager, 'check_system_requirements') as mock_reqs:
+                with patch.object(manager, '_check_ollama_available', return_value=True):
+                    with patch.object(manager, '_check_model_downloaded', return_value=True):
+
+                        mock_resources.return_value = {
+                            'cpu': {'cores': 8},
+                            'ram': {'total_gb': 16.0},
+                            'disk': {'free_gb': 50.0}
+                        }
+
+                        mock_reqs.return_value = {
+                            'success': True,
+                            'requirements_met': True
+                        }
+
+                        health = manager.health_check()
+
+                        self.assertTrue(health['success'])
+                        self.assertIn('status', health)
+                        self.assertIn('health_score', health)
+                        self.assertIn('recommendations', health)
+                        self.assertIn('check_duration_ms', health)
+
+    def test_get_download_status(self):
+        manager = ModelManager(self.config)
+
+        mock_downloads = [{'model': 'test-model', 'progress': 50.0}]
+        mock_history = [{'model': 'test-model', 'success': True}]
+
+        manager.downloader.get_active_downloads = Mock(return_value=mock_downloads)
+        manager.downloader.get_download_history = Mock(return_value=mock_history)
+
+        status = manager.get_download_status()
+
+        self.assertIn('active_downloads', status)
+        self.assertIn('download_history', status)
+        self.assertIn('timestamp', status)
+        self.assertEqual(len(status['active_downloads']), 1)
+        self.assertEqual(len(status['download_history']), 1)
+
+    @patch('src.ai_engine.model_manager.shutil.rmtree')
+    def test_cleanup(self, mock_rmtree):
+        manager = ModelManager(self.config)
+
+        mock_result = {
+            'removed_count': 3,
+            'freed_bytes': 1500000000,
+            'freed_mb': 1430.51
+        }
+        manager.downloader.cleanup_downloads = Mock(return_value=mock_result)
+
+        result = manager.cleanup(max_age_days=30)
+
+        self.assertEqual(result['removed_count'], 3)
+        self.assertEqual(result['freed_bytes'], 1500000000)
+        manager.downloader.cleanup_downloads.assert_called_once_with(30)
+
+    def test_get_model_statistics(self):
+        manager = ModelManager(self.config)
         
-        Args:
-            min_gb: Minimum GB required (default 7GB untuk lebih realistis)
-        
-        Returns:
-            True if sufficient RAM available
-        """
-        try:
-            memory = psutil.virtual_memory()
-            total_gb = memory.total / (1024 ** 3)        
-            effective_ram = total_gb * 0.85 
-            
-            logger.debug(f"RAM check: {total_gb:.2f}GB total, {effective_ram:.2f}GB effective, need {min_gb}GB")
-            return effective_ram >= min_gb
-        
-        except Exception as e:
-            logger.error(f"Error checking RAM: {e}")
-            return False
-    
-    def validate_model_files(self, model_name: str) -> Dict[str, Any]:
-        """
-        Validate existing model files.
-        
-        Args:
-            model_name: Name of the model to validate
-        
-        Returns:
-            Validation results
-        """
-        result = {
-            'valid': False,
-            'model': model_name,
-            'message': '',
-            'files_found': [],
-            'files_missing': [],
-            'total_size_bytes': 0,
-            'timestamp': datetime.now().isoformat()
+        manager.model_usage = {
+            "all-MiniLM-L6-v2": {
+                "download_count": 3,
+                "activation_count": 15,
+                "last_downloaded": "2024-01-15T10:00:00",
+                "last_activated": "2024-01-20T14:30:00"
+            },
+            "llama2:7b": {
+                "download_count": 2,
+                "activation_count": 8,
+                "last_downloaded": "2024-01-10T09:00:00",
+                "last_activated": "2024-01-18T11:00:00"
+            }
         }
         
-        # Check if it's an embedding model
-        if model_name in self.EMBEDDING_MODELS:
-            return self._validate_embedding_model_files(model_name)
+        stats = manager.get_model_statistics()
         
-        # For LLM models, check Ollama
-        try:
-            if self.llm_client:
-                model_info = self.llm_client.get_model_info(model_name)
-                if model_info.get('success', False):
-                    result['valid'] = True
-                    result['message'] = f"Model {model_name} is available via Ollama"
-                    result['files_found'] = ['ollama_model']
-                    result['total_size_bytes'] = model_info.get('size_bytes', 0)
-                else:
-                    result['message'] = f"Model {model_name} not found in Ollama"
-            else:
-                result['message'] = "LLM client not available for validation"
+        self.assertIn("all-MiniLM-L6-v2", stats)
+        self.assertIn("llama2:7b", stats)
         
-        except Exception as e:
-            result['message'] = f"Validation error: {str(e)}"
+        model_stats = stats["all-MiniLM-L6-v2"]
+        self.assertEqual(model_stats["download_count"], 3)
+        self.assertEqual(model_stats["activation_count"], 15)
+        self.assertEqual(model_stats["last_downloaded"], "2024-01-15T10:00:00")
         
-        return result
-    
-    def _validate_embedding_model_files(self, model_name: str) -> Dict[str, Any]:
-        """Validate embedding model files."""
-        result = {
-            'valid': False,
-            'model': model_name,
-            'message': '',
-            'files_found': [],
-            'files_missing': [],
-            'total_size_bytes': 0,
-            'timestamp': datetime.now().isoformat()
+        self.assertEqual(len(stats), 2)
+
+
+class TestModelManagerIntegration(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = Path(tempfile.mkdtemp())
+        self.config = {
+            'download_dir': str(self.temp_dir / "downloads"),
+            'models_dir': str(self.temp_dir / "models")
         }
-        
-        if not self.config or not hasattr(self.config, 'paths'):
-            result['message'] = 'Configuration not available'
-            return result
-        
-        try:
-            # Get models directory
-            if hasattr(self.config.paths, 'models_dir'):
-                models_dir = Path(self.config.paths.models_dir)
-            else:
-                models_dir = Path.home() / ".docubot" / "models"
-            
-            embedding_dir = models_dir / "sentence-transformers" / model_name
-            
-            if not embedding_dir.exists():
-                result['message'] = f'Model directory not found: {embedding_dir}'
-                return result
-            
-            # List all files
-            files = [f for f in embedding_dir.iterdir() if f.is_file()]
-            result['files_found'] = [f.name for f in files]
-            result['total_size_bytes'] = sum(f.stat().st_size for f in files)
-            
-            # Check for essential files
-            essential_files = ['config.json']
-            missing_files = []
-            
-            for essential_file in essential_files:
-                if essential_file not in result['files_found']:
-                    missing_files.append(essential_file)
-            
-            if missing_files:
-                result['files_missing'] = missing_files
-                result['message'] = f'Missing essential files: {", ".join(missing_files)}'
-            else:
-                # Check for at least one model file
-                model_files = [f for f in result['files_found'] 
-                             if any(keyword in f.lower() 
-                                   for keyword in ['model', 'pytorch', 'tensorflow', 'onnx'])]
-                
-                if model_files:
-                    result['valid'] = True
-                    result['message'] = f'Embedding model {model_name} files validated successfully'
-                else:
-                    result['message'] = 'No model files found (expecting .bin, .pt, etc.)'
-        
-        except Exception as e:
-            result['message'] = f'Validation error: {str(e)}'
-        
-        return result
-    
-    def get_system_resources(self) -> Dict[str, Any]:
-        """
-        Get current system resource information.
-        
-        Returns:
-            Dictionary with resource info
-        """
-        try:
-            # CPU
-            cpu_cores = os.cpu_count() or 1
-            
-            # RAM
-            memory = psutil.virtual_memory()
-            ram_total_gb = memory.total / (1024 ** 3)
-            ram_available_gb = memory.available / (1024 ** 3)
-            ram_used_percent = memory.percent
-            
-            # Disk
-            if self.config and hasattr(self.config, 'paths') and hasattr(self.config.paths, 'models_dir'):
-                check_path = Path(self.config.paths.models_dir)
-            else:
-                check_path = Path.home() / ".docubot"
-            
-            check_path.mkdir(parents=True, exist_ok=True)
-            disk_usage = psutil.disk_usage(str(check_path))
-            disk_total_gb = disk_usage.total / (1024 ** 3)
-            disk_free_gb = disk_usage.free / (1024 ** 3)
-            disk_used_percent = disk_usage.percent
-            
-            # GPU
-            gpu_available = torch.cuda.is_available()
-            gpu_count = torch.cuda.device_count() if gpu_available else 0
-            gpu_name = torch.cuda.get_device_name(0) if gpu_count > 0 else None
-            
-            # System info
-            import platform
-            system_info = {
-                'system': platform.system(),
-                'release': platform.release(),
-                'version': platform.version(),
-                'machine': platform.machine(),
-                'processor': platform.processor(),
-                'python_version': platform.python_version()
+
+        (self.temp_dir / "downloads").mkdir(parents=True, exist_ok=True)
+        (self.temp_dir / "models").mkdir(parents=True, exist_ok=True)
+
+    def tearDown(self):
+        if self.temp_dir.exists():
+            shutil.rmtree(self.temp_dir)
+
+    def test_complete_model_lifecycle(self):
+        manager = ModelManager(self.config)
+
+        models = manager.get_available_models('embedding')
+        self.assertGreater(len(models), 0)
+
+        model_name = models[0]['name']
+        model_info = manager.get_model_info(model_name, 'embedding')
+        self.assertTrue(model_info['success'])
+
+        validation = manager.validate_model_download(model_name, 'embedding')
+        self.assertIn('valid', validation)
+
+        with patch.object(manager, '_check_model_downloaded', return_value=True):
+            success = manager.set_active_model(model_name, 'embedding')
+            self.assertTrue(success)
+
+            active = manager.get_active_model('embedding')
+            self.assertIsNotNone(active)
+            self.assertEqual(active.name, model_name)
+
+        health = manager.health_check()
+        self.assertTrue(health['success'])
+
+        resources = manager.get_system_resources()
+        self.assertIn('cpu', resources)
+        self.assertIn('ram', resources)
+        self.assertIn('disk', resources)
+
+        status = manager.get_download_status()
+        self.assertIn('active_downloads', status)
+        self.assertIn('download_history', status)
+
+    def test_singleton_pattern(self):
+        manager1 = get_model_manager(self.config)
+        manager2 = get_model_manager(self.config)
+
+        self.assertIs(manager1, manager2)
+
+        manager3 = get_model_manager({'download_dir': '/tmp/test'})
+        self.assertIsNot(manager1, manager3)
+
+
+class TestModelRegistry(unittest.TestCase):
+    def setUp(self):
+        from src.ai_engine.model_manager import ModelRegistry
+        self.registry = ModelRegistry()
+
+    def test_get_model(self):
+        model = self.registry.get_model("llama2:7b", "llm")
+        self.assertIsNotNone(model)
+        self.assertEqual(model.name, "llama2:7b")
+        self.assertEqual(model.model_type, "llm")
+
+        model = self.registry.get_model("all-MiniLM-L6-v2", "embedding")
+        self.assertIsNotNone(model)
+        self.assertEqual(model.name, "all-MiniLM-L6-v2")
+        self.assertEqual(model.model_type, "embedding")
+
+        model = self.registry.get_model("non-existent", "llm")
+        self.assertIsNone(model)
+
+    def test_get_all_models(self):
+        all_models = self.registry.get_all_models()
+        self.assertGreater(len(all_models), 0)
+
+        llm_models = self.registry.get_all_models("llm")
+        self.assertGreater(len(llm_models), 0)
+        self.assertTrue(all(m.model_type == "llm" for m in llm_models))
+
+        embedding_models = self.registry.get_all_models("embedding")
+        self.assertGreater(len(embedding_models), 0)
+        self.assertTrue(all(m.model_type == "embedding" for m in embedding_models))
+
+    def test_register_model(self):
+        new_model = ModelMetadata(
+            name="custom-model",
+            display_name="Custom Model",
+            model_type="custom",
+            provider="custom-provider",
+            description="Custom test model"
+        )
+
+        success = self.registry.register_model(new_model)
+
+        self.assertTrue(success)
+        registered = self.registry.get_model("custom-model", "custom")
+        self.assertIsNotNone(registered)
+        self.assertEqual(registered.name, "custom-model")
+
+    def test_unregister_model(self):
+        new_model = ModelMetadata(
+            name="to-remove",
+            display_name="To Remove",
+            model_type="llm",
+            provider="test",
+            description="To be removed"
+        )
+
+        self.registry.register_model(new_model)
+        self.assertIsNotNone(self.registry.get_model("to-remove", "llm"))
+
+        success = self.registry.unregister_model("to-remove")
+        self.assertTrue(success)
+        self.assertIsNone(self.registry.get_model("to-remove", "llm"))
+
+        success = self.registry.unregister_model("non-existent")
+        self.assertFalse(success)
+
+    def test_get_default_model(self):
+        default_llm = self.registry.get_default_model("llm")
+        self.assertIsNotNone(default_llm)
+        self.assertTrue(default_llm.is_default)
+
+        default_embedding = self.registry.get_default_model("embedding")
+        self.assertIsNotNone(default_embedding)
+        self.assertTrue(default_embedding.is_default)
+
+    def test_set_default_model(self):
+        current_default = self.registry.get_default_model("llm")
+        self.assertIsNotNone(current_default)
+
+        success = self.registry.set_default_model("mistral:7b", "llm")
+        self.assertTrue(success)
+
+        new_default = self.registry.get_default_model("llm")
+        self.assertIsNotNone(new_default)
+        self.assertEqual(new_default.name, "mistral:7b")
+        self.assertTrue(new_default.is_default)
+
+        old_model = self.registry.get_model(current_default.name, "llm")
+        self.assertFalse(old_model.is_default)
+
+
+class TestSystemResourceMonitor(unittest.TestCase):
+    def setUp(self):
+        from src.ai_engine.model_manager import SystemResourceMonitor
+        self.monitor = SystemResourceMonitor()
+
+    @patch('src.ai_engine.model_manager.psutil.virtual_memory')
+    @patch('src.ai_engine.model_manager.psutil.cpu_percent')
+    @patch('src.ai_engine.model_manager.psutil.cpu_freq')
+    @patch('src.ai_engine.model_manager.psutil.disk_usage')
+    @patch('src.ai_engine.model_manager.platform')
+    def test_get_system_resources(self, mock_platform, mock_disk_usage,
+                                 mock_cpu_freq, mock_cpu_percent, mock_virtual_memory):
+        mock_platform.system.return_value = "Linux"
+        mock_platform.release.return_value = "5.15.0"
+        mock_platform.version.return_value = "#1 SMP"
+        mock_platform.machine.return_value = "x86_64"
+        mock_platform.processor.return_value = "Intel"
+        mock_platform.python_version.return_value = "3.11.0"
+        mock_platform.node.return_value = "test-host"
+
+        mock_cpu_freq.return_value = Mock(current=3200.0)
+        mock_cpu_percent.return_value = 25.0
+
+        mock_memory = Mock()
+        mock_memory.total = 16 * (1024 ** 3)
+        mock_memory.available = 8 * (1024 ** 3)
+        mock_memory.used = 8 * (1024 ** 3)
+        mock_memory.percent = 50.0
+        mock_virtual_memory.return_value = mock_memory
+
+        mock_usage = Mock()
+        mock_usage.total = 500 * (1024 ** 3)
+        mock_usage.free = 300 * (1024 ** 3)
+        mock_usage.used = 200 * (1024 ** 3)
+        mock_usage.percent = 40.0
+        mock_disk_usage.return_value = mock_usage
+
+        resources = self.monitor.get_system_resources()
+
+        self.assertIn('cpu', resources)
+        self.assertIn('ram', resources)
+        self.assertIn('disk', resources)
+        self.assertIn('system', resources)
+        self.assertIn('timestamp', resources)
+
+        self.assertEqual(resources['cpu']['cores'], 1)
+        self.assertEqual(resources['ram']['total_gb'], 16.0)
+        self.assertEqual(resources['system']['system'], "Linux")
+
+    def test_check_requirements(self):
+        requirements = ModelRequirements(
+            ram_gb=8.0,
+            storage_gb=10.0,
+            cpu_cores=4,
+            gpu_vram_gb=8.0,
+            python_version="3.11"
+        )
+
+        mock_resources = {
+            'cpu': {'cores': 8, 'percent': 25.0},
+            'ram': {'total_gb': 16.0, 'available_gb': 12.0},
+            'disk': {'/home/user': {'free_gb': 50.0}},
+            'gpu': {'available': True, 'count': 1, 'devices': [{'total_memory_gb': 12.0}]},
+            'system': {'python_version': '3.11.5'}
+        }
+
+        self.monitor.get_system_resources = Mock(return_value=mock_resources)
+
+        result = self.monitor.check_requirements(requirements)
+
+        self.assertTrue(result['success'])
+        self.assertTrue(result['requirements_met'])
+        self.assertIn('details', result)
+
+        details = result['details']
+        self.assertIn('ram', details)
+        self.assertIn('cpu', details)
+        self.assertIn('disk', details)
+        self.assertIn('gpu', details)
+        self.assertIn('python', details)
+
+        self.assertTrue(all(check['met'] for check in details.values()))
+
+    def test_get_resource_history(self):
+        self.monitor.history = [
+            {
+                'timestamp': '2024-01-01T10:00:00',
+                'cpu': {'percent': 25.0},
+                'ram': {'percent': 50.0}
+            },
+            {
+                'timestamp': '2024-01-01T10:01:00',
+                'cpu': {'percent': 30.0},
+                'ram': {'percent': 55.0}
+            },
+            {
+                'timestamp': '2024-01-01T10:02:00',
+                'cpu': {'percent': 35.0},
+                'ram': {'percent': 60.0}
             }
-            
-            return {
-                'cpu': {
-                    'cores': cpu_cores,
-                    'usage_percent': psutil.cpu_percent(interval=0.1)
-                },
-                'ram': {
-                    'total_gb': round(ram_total_gb, 2),
-                    'available_gb': round(ram_available_gb, 2),
-                    'used_percent': ram_used_percent,
-                    'minimum_required_gb': 8
-                },
-                'disk': {
-                    'total_gb': round(disk_total_gb, 2),
-                    'free_gb': round(disk_free_gb, 2),
-                    'used_percent': disk_used_percent,
-                    'path': str(check_path)
-                },
-                'gpu': {
-                    'available': gpu_available,
-                    'count': gpu_count,
-                    'name': gpu_name
-                },
-                'system': system_info,
-                'ollama_installed': self.check_ollama_installed(),
-                'timestamp': datetime.now().isoformat()
-            }
-        
-        except Exception as e:
-            logger.error(f"Error getting system resources: {e}")
-            return {
-                'error': str(e),
-                'timestamp': datetime.now().isoformat()
-            }
-    
-    def check_ollama_installed(self) -> bool:
-        """
-        Check if Ollama is installed and accessible.
-        
-        Returns:
-            True if Ollama is installed
-        """
-        try:
-            # Try to run ollama command
-            result = subprocess.run(
-                ['ollama', '--version'],
-                capture_output=True,
-                text=True,
-                timeout=5,
-                creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+        ]
+
+        cpu_history = self.monitor.get_resource_history('cpu.percent', time_window_minutes=5)
+
+        self.assertEqual(len(cpu_history), 3)
+        self.assertEqual(cpu_history[0]['value'], 25.0)
+        self.assertEqual(cpu_history[1]['value'], 30.0)
+        self.assertEqual(cpu_history[2]['value'], 35.0)
+
+        ram_history = self.monitor.get_resource_history('ram.percent', time_window_minutes=2)
+
+        self.assertGreaterEqual(len(ram_history), 2)
+
+    def test_get_resource_summary(self):
+        mock_resources = {
+            'cpu': {'percent': 25.0, 'cores': 8},
+            'ram': {'percent': 50.0, 'total_gb': 16.0, 'available_gb': 8.0},
+            'disk': {'/home/user': {'free_gb': 50.0}},
+            'gpu': {'available': True, 'count': 1},
+            'system': {'system': 'Linux'},
+            'timestamp': '2024-01-01T10:00:00'
+        }
+
+        self.monitor.get_system_resources = Mock(return_value=mock_resources)
+
+        summary = self.monitor.get_resource_summary()
+
+        self.assertIn('cpu', summary)
+        self.assertIn('ram', summary)
+        self.assertIn('disk', summary)
+        self.assertIn('gpu', summary)
+        self.assertIn('system', summary)
+        self.assertIn('timestamp', summary)
+
+        self.assertEqual(summary['cpu']['usage_percent'], 25.0)
+        self.assertEqual(summary['ram']['usage_percent'], 50.0)
+        self.assertEqual(summary['gpu']['available'], True)
+
+
+class TestModelDownloader(unittest.TestCase):
+    def setUp(self):
+        from src.ai_engine.model_manager import ModelDownloader
+        self.temp_dir = Path(tempfile.mkdtemp())
+        self.downloader = ModelDownloader(str(self.temp_dir))
+
+    def tearDown(self):
+        if self.temp_dir.exists():
+            shutil.rmtree(self.temp_dir)
+
+    def test_initialization(self):
+        self.assertEqual(self.downloader.download_dir, self.temp_dir)
+        self.assertIsInstance(self.downloader.active_downloads, dict)
+        self.assertIsInstance(self.downloader.download_history, list)
+        self.assertIsNotNone(self.downloader.executor)
+        self.assertIsNotNone(self.downloader.lock)
+
+    @patch('src.ai_engine.model_manager.requests.get')
+    def test_download_http_success(self, mock_requests_get):
+        metadata = Mock()
+        metadata.name = "test-model"
+        metadata.model_type = "embedding"
+        metadata.download_url = "http://example.com/model.bin"
+        metadata.checksum = None
+        metadata.download_progress = 0.0
+        metadata.is_downloaded = False
+        metadata.updated_at = None
+        metadata.installed_size_mb = 0.0
+        metadata.to_dict.return_value = {}
+
+        model_dir = self.temp_dir / "embedding" / "test-model"
+        model_dir.mkdir(parents=True, exist_ok=True)
+
+        mock_response = Mock()
+        mock_response.headers = {'content-length': '1000'}
+        mock_response.iter_content.return_value = [b'chunk1', b'chunk2', b'chunk3']
+        mock_response.raise_for_status.return_value = None
+        mock_requests_get.return_value = mock_response
+
+        with patch('src.ai_engine.model_manager.tqdm'):
+            result = self.downloader._download_http(
+                metadata,
+                model_dir,
+                "test-download-id"
             )
-            installed = result.returncode == 0
-            
-            if installed:
-                logger.debug(f"Ollama found: {result.stdout.strip()}")
-            else:
-                logger.debug(f"Ollama not found: {result.stderr}")
-            
-            return installed
-            
-        except FileNotFoundError:
-            logger.debug("Ollama command not found")
-            return False
-        except subprocess.TimeoutExpired:
-            logger.warning("Ollama command timed out")
-            return False
-        except Exception as e:
-            logger.error(f"Error checking Ollama: {e}")
-            return False
-    
-    def format_file_size(self, size_bytes: int) -> str:
-        """
-        Format file size in human readable format.
-        
-        Args:
-            size_bytes: Size in bytes
-        
-        Returns:
-            Formatted size string
-        """
-        if size_bytes == 0:
-            return "0 B"
-        
-        size_names = ['B', 'KB', 'MB', 'GB', 'TB', 'PB', 'EB', 'ZB', 'YB']
-        i = 0
-        
-        while size_bytes >= 1024 and i < len(size_names) - 1:
-            size_bytes /= 1024.0
-            i += 1
-        
-        if i == 0:
-            return f"{size_bytes} {size_names[i]}"
-        else:
-            return f"{size_bytes:.2f} {size_names[i]}"
-    
-    def get_model_info(self, model_name: str, model_type: str = 'llm') -> Dict[str, Any]:
-        """
-        Get detailed information about a specific model.
-        
-        Args:
-            model_name: Name of the model
-            model_type: 'llm' or 'embedding'
-        
-        Returns:
-            Model information
-        """
-        if model_type == 'llm':
-            if model_name in self.LLM_MODELS:
-                model_info = self.LLM_MODELS[model_name]
-                return {
-                    'success': True,
-                    'model': model_name,
-                    'type': 'llm',
-                    'display_name': model_info['display_name'],
-                    'description': model_info['description'],
-                    'ram_required_gb': model_info['ram_required_gb'],
-                    'storage_required_gb': model_info['storage_required_gb'],
-                    'context_window': model_info['context_window'],
-                    'is_default': model_info['default'],
-                    'ollama_required': True
-                }
-            else:
-                return {
-                    'success': False,
-                    'model': model_name,
-                    'error': 'LLM model not found in database'
-                }
-        
-        elif model_type == 'embedding':
-            if model_name in self.EMBEDDING_MODELS:
-                model_info = self.EMBEDDING_MODELS[model_name]
-                downloaded = self._is_embedding_model_downloaded(model_name)
-                
-                return {
-                    'success': True,
-                    'model': model_name,
-                    'type': 'embedding',
-                    'display_name': model_info['display_name'],
-                    'description': model_info['description'],
-                    'dimensions': model_info['dimensions'],
-                    'context_length': model_info['context_length'],
-                    'size_mb': model_info['size_mb'],
-                    'speed': model_info['speed'],
-                    'accuracy': model_info['accuracy'],
-                    'languages': model_info['languages'],
-                    'is_default': model_info['default'],
-                    'downloaded': downloaded,
-                    'download_size_mb': model_info['size_mb'],
-                    'requirements': {
-                        'ram_gb': 4,
-                        'storage_gb': model_info['size_mb'] / 1024
-                    }
-                }
-            else:
-                return {
-                    'success': False,
-                    'model': model_name,
-                    'error': 'Embedding model not found in database'
-                }
-        
-        else:
-            return {
-                'success': False,
-                'model': model_name,
-                'error': f'Unknown model type: {model_type}'
+
+        self.assertTrue(result.exists())
+        self.assertEqual(result.name, "model.bin")
+        mock_requests_get.assert_called_once_with(
+            "http://example.com/model.bin",
+            stream=True,
+            timeout=30
+        )
+
+    def test_copy_local(self):
+        source_file = self.temp_dir / "source_model.bin"
+        source_file.write_text("test model content")
+
+        metadata = Mock()
+        metadata.download_url = str(source_file)
+        metadata.name = "test-model"
+
+        dest_dir = self.temp_dir / "models" / "test-model"
+        dest_dir.mkdir(parents=True, exist_ok=True)
+
+        result = self.downloader._copy_local(metadata, dest_dir, "test-download-id")
+
+        self.assertTrue(result.exists())
+        self.assertEqual(result.read_text(), "test model content")
+
+    def test_verify_checksum(self):
+        test_file = self.temp_dir / "test.bin"
+        test_file.write_text("test content")
+
+        import hashlib
+        sha256_hash = hashlib.sha256()
+        sha256_hash.update(b"test content")
+        expected_checksum = sha256_hash.hexdigest()
+
+        valid = self.downloader._verify_checksum(test_file, expected_checksum)
+        self.assertTrue(valid)
+
+        invalid = self.downloader._verify_checksum(test_file, "invalid_checksum")
+        self.assertFalse(invalid)
+
+    def test_calculate_directory_size(self):
+        test_dir = self.temp_dir / "test_dir"
+        test_dir.mkdir()
+
+        (test_dir / "file1.txt").write_text("x" * 1000)
+        (test_dir / "file2.txt").write_text("x" * 2000)
+        (test_dir / "subdir").mkdir()
+        (test_dir / "subdir" / "file3.txt").write_text("x" * 3000)
+
+        total_size = self.downloader._calculate_directory_size(test_dir)
+        self.assertEqual(total_size, 6000)
+
+    def test_get_active_downloads(self):
+        self.downloader.active_downloads = {
+            "test-id": {
+                "model": "test-model",
+                "progress": 50.0,
+                "status": "downloading"
             }
-    
-    def health_check(self) -> Dict[str, Any]:
-        """
-        Perform health check of model management system.
-        
-        Returns:
-            Health check results
-        """
-        start_time = time.time()
-        
-        try:
-            # Get system resources
-            resources = self.get_system_resources()
-            
-            # Check Ollama
-            ollama_installed = self.check_ollama_installed()
-            
-            # Check disk space for model downloads
-            disk_ok = self.check_disk_space(min_gb=10)  # 10GB minimum
-            
-            # Check RAM
-            ram_ok = self.check_ram_requirements(min_gb=8)  # 8GB minimum
-            
-            # Calculate health score (0-100)
-            health_score = 0
-            if disk_ok:
-                health_score += 30
-            if ram_ok:
-                health_score += 30
-            if ollama_installed:
-                health_score += 20
-            if 'error' not in resources:
-                health_score += 20
-            
-            # Get embedding models status
-            embedding_models = self.get_available_embedding_models()
-            downloaded_embeddings = sum(1 for m in embedding_models if m['downloaded'])
-            
-            # Get LLM models status
-            llm_models = self.get_available_llm_models()
-            available_llms = len(llm_models)
-            
-            result = {
-                'success': True,
-                'status': 'healthy' if health_score >= 80 else 'degraded' if health_score >= 50 else 'unhealthy',
-                'health_score': health_score,
-                'system_resources': resources,
-                'requirements': {
-                    'disk_space_ok': disk_ok,
-                    'ram_ok': ram_ok,
-                    'ollama_installed': ollama_installed
-                },
-                'models': {
-                    'embedding_models_total': len(embedding_models),
-                    'embedding_models_downloaded': downloaded_embeddings,
-                    'llm_models_available': available_llms,
-                    'has_default_embedding': any(m['is_default'] and m['downloaded'] for m in embedding_models)
-                },
-                'recommendations': [],
-                'check_duration_ms': round((time.time() - start_time) * 1000, 2),
-                'timestamp': datetime.now().isoformat()
-            }
-            
-            # Generate recommendations
-            if not disk_ok:
-                result['recommendations'].append("Free up disk space (minimum 10GB required)")
-            
-            if not ram_ok:
-                result['recommendations'].append("Consider upgrading RAM (minimum 8GB required)")
-            
-            if not ollama_installed:
-                result['recommendations'].append("Install Ollama from https://ollama.ai/")
-            
-            if downloaded_embeddings == 0:
-                result['recommendations'].append("Download at least one embedding model")
-            
-            return result
-        
-        except Exception as e:
-            logger.error(f"Health check failed: {e}")
-            return {
-                'success': False,
-                'status': 'unhealthy',
-                'health_score': 0,
-                'error': str(e),
-                'check_duration_ms': round((time.time() - start_time) * 1000, 2),
-                'timestamp': datetime.now().isoformat()
-            }
+        }
+
+        downloads = self.downloader.get_active_downloads()
+
+        self.assertEqual(len(downloads), 1)
+        self.assertEqual(downloads[0]["model"], "test-model")
+        self.assertEqual(downloads[0]["progress"], 50.0)
+
+    def test_get_download_history(self):
+        self.downloader.download_history = [
+            {"model": "model1", "success": True},
+            {"model": "model2", "success": True},
+            {"model": "model3", "success": False}
+        ]
+
+        history = self.downloader.get_download_history()
+        self.assertEqual(len(history), 3)
+
+        limited = self.downloader.get_download_history(limit=2)
+        self.assertEqual(len(limited), 2)
+
+    @patch('src.ai_engine.model_manager.shutil.rmtree')
+    def test_cleanup_downloads(self, mock_rmtree):
+        import time
+        old_time = time.time() - (60 * 60 * 24 * 31)
+
+        old_dir = self.temp_dir / "embedding" / "old-model"
+        old_dir.mkdir(parents=True, exist_ok=True)
+
+        test_file = old_dir / "model.bin"
+        test_file.write_text("x" * 1000)
+
+        os.utime(old_dir, (old_time, old_time))
+
+        new_dir = self.temp_dir / "embedding" / "new-model"
+        new_dir.mkdir(parents=True, exist_ok=True)
+
+        result = self.downloader.cleanup_downloads(max_age_days=30)
+
+        self.assertEqual(result['removed_count'], 1)
+        self.assertGreater(result['freed_bytes'], 0)
+        mock_rmtree.assert_called_once_with(old_dir)
 
 
-# Factory function
-def get_model_manager(config=None):
-    """
-    Get or create a ModelManager instance.
-    
-    Args:
-        config: AppConfig instance
-    
-    Returns:
-        ModelManager instance
-    """
-    return ModelManager(config)
-
-
-if __name__ == "__main__":
-    # Test the ModelManager
-    import sys
-    
-    print("=" * 70)
-    print("DOCUBOT MODEL MANAGER - TEST")
-    print("=" * 70)
-    
-    # Create a mock config for testing
-    class MockPaths:
-        models_dir = os.path.join(os.path.expanduser("~"), ".docubot", "models")
-    
-    class MockConfig:
-        paths = MockPaths()
-    
-    config = MockConfig()
-    
-    # Create manager
-    manager = ModelManager(config)
-    
-    print("\n1. SYSTEM RESOURCES:")
-    print("-" * 40)
-    resources = manager.get_system_resources()
-    
-    if 'error' in resources:
-        print(f"  Error: {resources['error']}")
-    else:
-        print(f"  CPU Cores: {resources['cpu']['cores']}")
-        print(f"  RAM: {resources['ram']['total_gb']:.1f} GB total")
-        print(f"  Disk: {resources['disk']['free_gb']:.1f} GB free")
-        print(f"  GPU Available: {resources['gpu']['available']}")
-        if resources['gpu']['available']:
-            print(f"  GPU Name: {resources['gpu']['name']}")
-    
-    print("\n2. REQUIREMENTS CHECK:")
-    print("-" * 40)
-    print(f"  Disk Space (10GB): {'✓' if manager.check_disk_space(10) else '✗'}")
-    print(f"  RAM (8GB): {'✓' if manager.check_ram_requirements(8) else '✗'}")
-    print(f"  Ollama Installed: {'✓' if manager.check_ollama_installed() else '✗'}")
-    
-    print("\n3. EMBEDDING MODELS:")
-    print("-" * 40)
-    embedding_models = manager.get_available_embedding_models()
-    for model in embedding_models:
-        status = "✓" if model['downloaded'] else "○"
-        default = " [DEFAULT]" if model['is_default'] else ""
-        print(f"  {status} {model['name']}{default} - {model['dimensions']}D ({model['size_mb']}MB)")
-    
-    print("\n4. LLM MODELS:")
-    print("-" * 40)
-    llm_models = manager.get_available_llm_models()
-    for model in llm_models[:3]:  # Show first 3
-        default = " [DEFAULT]" if model.get('is_default', False) else ""
-        print(f"  ○ {model['name']}{default} - {model.get('display_name', 'N/A')}")
-    
-    if len(llm_models) > 3:
-        print(f"  ... and {len(llm_models) - 3} more")
-    
-    print("\n5. MODEL VALIDATION:")
-    print("-" * 40)
-    
-    # Test embedding model validation
-    test_model = "all-MiniLM-L6-v2"
-    validation = manager.validate_model_download(test_model, 'embedding')
-    print(f"  {test_model}:")
-    print(f"    Can download: {validation['can_download']}")
-    print(f"    Message: {validation['message']}")
-    
-    # Test LLM model validation
-    if manager.check_ollama_installed():
-        test_llm = "llama2:7b"
-        validation = manager.validate_model_download(test_llm, 'llm')
-        print(f"  {test_llm}:")
-        print(f"    Can download: {validation['can_download']}")
-        print(f"    Requirements met: {validation['requirements_met']}")
-    
-    print("\n6. HEALTH CHECK:")
-    print("-" * 40)
-    health = manager.health_check()
-    
-    if health['success']:
-        print(f"  Status: {health['status'].upper()}")
-        print(f"  Health Score: {health['health_score']}/100")
-        print(f"  Models: {health['models']['embedding_models_downloaded']} embeddings, {health['models']['llm_models_available']} LLMs")
-        
-        if health['recommendations']:
-            print("  Recommendations:")
-            for rec in health['recommendations']:
-                print(f"    • {rec}")
-    else:
-        print(f"  Health check failed: {health.get('error', 'Unknown error')}")
-    
-    print("\n7. UTILITY FUNCTIONS:")
-    print("-" * 40)
-    test_sizes = [500, 1500, 1500000, 1500000000]
-    for size in test_sizes:
-        formatted = manager.format_file_size(size)
-        print(f"  {size:,} bytes = {formatted}")
-    
-    print("\n" + "=" * 70)
-    print("TEST COMPLETE")
-    print("=" * 70)
-    
-    # Exit with success
-    sys.exit(0)
+if __name__ == '__main__':
+    unittest.main()

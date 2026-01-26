@@ -1,3 +1,5 @@
+# docubase/src/document_processing/extractors/base_extractor.py
+
 """
 Base Document Extractor Interface
 """

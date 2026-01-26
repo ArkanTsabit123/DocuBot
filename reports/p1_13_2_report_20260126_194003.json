@@ -1,0 +1,126 @@
+{
+  "task_id": "P1.13.2",
+  "description": "End-to-end query flow tests",
+  "validation_date": "20260126_194003",
+  "status": "in_progress",
+  "validation_score": 0.8,
+  "quality_score": 80.0,
+  "metrics": {
+    "task_id": "P1.13.2",
+    "description": "End-to-end query flow tests",
+    "target_file": "tests/e2e/test_full_workflow.py",
+    "status": "in_progress",
+    "last_updated": "2026-01-26T19:40:00.702592",
+    "validation_score": 0.8,
+    "quality_score": 80.0,
+    "file_exists": true,
+    "file_size": 21176,
+    "lines_of_code": 639,
+    "test_functions": 13,
+    "test_classes": 1,
+    "has_docstrings": true,
+    "has_type_hints": true,
+    "has_mocks": true,
+    "has_edge_cases": true,
+    "has_performance_tests": true,
+    "has_integration_tests": true,
+    "content_completeness": 1.0,
+    "tests_run": 0,
+    "tests_passed": 0,
+    "tests_failed": 0,
+    "test_coverage": 0.0,
+    "execution_time": 1.5238845348358154,
+    "execution_successful": false,
+    "dependencies": [
+      "P1.3.1",
+      "P1.6.1",
+      "P1.8.1",
+      "P1.9.1",
+      "P1.11.1",
+      "P1.12.1"
+    ],
+    "dependencies_status": {
+      "P1.3.1": {
+        "exists": true,
+        "status": "completed",
+        "score": 1.0,
+        "description": "Complete document processor (processor.py)"
+      },
+      "P1.6.1": {
+        "exists": true,
+        "status": "completed",
+        "score": 1.0,
+        "description": "Complete ChromaDB vector store client"
+      },
+      "P1.8.1": {
+        "exists": true,
+        "status": "completed",
+        "score": 1.0,
+        "description": "Complete Ollama LLM client"
+      },
+      "P1.9.1": {
+        "exists": true,
+        "status": "completed",
+        "score": 1.0,
+        "description": "Complete embedding service"
+      },
+      "P1.11.1": {
+        "exists": true,
+        "status": "completed",
+        "score": 1.0,
+        "description": "Complete RAG engine"
+      },
+      "P1.12.1": {
+        "exists": true,
+        "status": "completed",
+        "score": 1.0,
+        "description": "Complete DocuBotCore class (app.py)"
+      }
+    },
+    "dependency_score": 1.0,
+    "validation_details": {
+      "component_scores": {
+        "structure": 1.0,
+        "content": 1.0,
+        "execution": 0.0,
+        "dependencies": 1.0
+      },
+      "weights": {
+        "structure": 0.25,
+        "content": 0.3,
+        "execution": 0.35,
+        "dependencies": 0.1
+      },
+      "weighted_components": {
+        "structure": 0.25,
+        "content": 0.3,
+        "execution": 0.0,
+        "dependencies": 0.1
+      },
+      "weighted_total": 0.65,
+      "bonuses": 0.15,
+      "bonus_details": [
+        "+0.05: Comprehensive test suite (≥10 functions)",
+        "+0.03: Includes mock objects",
+        "+0.03: Includes edge case tests",
+        "+0.02: Includes performance tests",
+        "+0.02: Fast execution (1.5s)"
+      ],
+      "final_score": 0.8
+    },
+    "errors": [
+      "Coverage areas: Document Processing, Vector Store, Database, RAG Pipeline, Error Handling"
+    ],
+    "warnings": [],
+    "recommendations": [
+      "Fix test execution issues - check imports and dependencies",
+      "Ensure pytest is installed: pip install pytest"
+    ],
+    "created_at": "2026-01-26T01:02:34.336349",
+    "started_at": "2026-01-26T01:02:41.093232",
+    "completed_at": "",
+    "estimated_hours": 2.7,
+    "actual_hours": 0.0
+  },
+  "generated_by": "P1.13.2 Progress Tracker"
+}

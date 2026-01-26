@@ -1,7 +1,7 @@
 # docubot/src/ai_engine/model_manager.py
 
 """
-DocuBot Model Manager
+DocuBot Model Management System
 Centralized management for AI models including LLMs and embedding models.
 Handles downloading, validation, system resource checking, and model lifecycle.
 """
@@ -9,30 +9,39 @@ Handles downloading, validation, system resource checking, and model lifecycle.
 import os
 import sys
 import json
+import yaml
 import time
 import logging
 import subprocess
 import shutil
 import hashlib
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Union, Tuple, Callable
-from datetime import datetime, timedelta
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Dict, List, Any, Optional, Tuple
+from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 import threading
 from dataclasses import dataclass, asdict, field
 
-import psutil
-import torch
-import requests
-from tqdm import tqdm
+# Import checks with proper structure
+try:
+    import chromadb
+    CHROMADB_AVAILABLE = True
+except ImportError:
+    CHROMADB_AVAILABLE = False
+    chromadb = None
 
-# Configure logging
-logger = logging.getLogger(__name__)
+try:
+    import psutil
+    PSUTIL_AVAILABLE = True
+except ImportError:
+    PSUTIL_AVAILABLE = False
+    psutil = None
 
 
 @dataclass
 class ModelRequirements:
-    """Model hardware and software requirements."""
+    """Hardware and software requirements for AI models."""
+    
     ram_gb: float = 8.0
     storage_gb: float = 5.0
     cpu_cores: int = 4
@@ -41,17 +50,17 @@ class ModelRequirements:
     dependencies: List[str] = field(default_factory=list)
     
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary."""
         return asdict(self)
 
 
 @dataclass
 class ModelMetadata:
-    """Metadata for AI models."""
+    """Metadata representation for AI models."""
+    
     name: str
     display_name: str
-    model_type: str  # 'llm' or 'embedding'
-    provider: str  # 'ollama', 'sentence-transformers', 'huggingface'
+    model_type: str
+    provider: str
     description: str
     version: str = "1.0"
     license: str = "Apache 2.0"
@@ -59,21 +68,17 @@ class ModelMetadata:
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = field(default_factory=lambda: datetime.now().isoformat())
     
-    # Technical specifications
     parameters_billion: Optional[float] = None
     context_length: Optional[int] = None
     embedding_dimensions: Optional[int] = None
     
-    # Requirements
     requirements: ModelRequirements = field(default_factory=ModelRequirements)
     
-    # File information
     download_size_mb: float = 0.0
     installed_size_mb: float = 0.0
     download_url: Optional[str] = None
     checksum: Optional[str] = None
     
-    # Status
     is_downloaded: bool = False
     is_default: bool = False
     is_active: bool = False
@@ -82,13 +87,11 @@ class ModelMetadata:
     usage_count: int = 0
     
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary."""
         result = asdict(self)
         result['requirements'] = self.requirements.to_dict()
         return result
     
-    def update_usage(self):
-        """Update usage statistics."""
+    def update_usage(self) -> None:
         self.usage_count += 1
         self.last_used = datetime.now().isoformat()
         self.updated_at = datetime.now().isoformat()
@@ -98,40 +101,19 @@ class ModelDownloader:
     """Handles model downloading with progress tracking and validation."""
     
     def __init__(self, download_dir: Optional[str] = None):
-        """
-        Initialize model downloader.
-        
-        Args:
-            download_dir: Directory for downloaded models
-        """
         self.download_dir = Path(download_dir) if download_dir else Path.home() / ".docubot" / "downloads"
         self.download_dir.mkdir(parents=True, exist_ok=True)
         
-        # Download tracking
         self.active_downloads: Dict[str, Dict[str, Any]] = {}
         self.download_history: List[Dict[str, Any]] = []
         
-        # Thread pool for concurrent downloads
         self.executor = ThreadPoolExecutor(max_workers=2)
         self.lock = threading.Lock()
         
-        logger.info(f"ModelDownloader initialized at {self.download_dir}")
+        self.logger = logging.getLogger(__name__)
+        self.logger.info(f"ModelDownloader initialized at {self.download_dir}")
     
-    def download_model(self, 
-                      metadata: ModelMetadata,
-                      force: bool = False,
-                      verify: bool = True) -> Dict[str, Any]:
-        """
-        Download a model with progress tracking.
-        
-        Args:
-            metadata: Model metadata
-            force: Force re-download even if exists
-            verify: Verify checksum after download
-            
-        Returns:
-            Download results
-        """
+    def download_model(self, metadata: ModelMetadata, force: bool = False, verify: bool = True) -> Dict[str, Any]:
         result = {
             'success': False,
             'model': metadata.name,
@@ -145,7 +127,6 @@ class ModelDownloader:
             'timestamp': datetime.now().isoformat()
         }
         
-        # Check if already downloaded
         model_dir = self.download_dir / metadata.model_type / metadata.name
         if model_dir.exists() and not force:
             result['success'] = True
@@ -153,18 +134,16 @@ class ModelDownloader:
             result['download_path'] = str(model_dir)
             return result
         
-        # Validate download URL
         if not metadata.download_url:
             result['message'] = "No download URL specified"
             return result
         
         start_time = time.time()
+        download_id = None
         
         try:
-            # Create model directory
             model_dir.mkdir(parents=True, exist_ok=True)
             
-            # Track download
             download_id = f"{metadata.name}_{int(start_time)}"
             with self.lock:
                 self.active_downloads[download_id] = {
@@ -174,32 +153,26 @@ class ModelDownloader:
                     'status': 'starting'
                 }
             
-            logger.info(f"Starting download: {metadata.name} from {metadata.download_url}")
+            self.logger.info(f"Starting download: {metadata.name} from {metadata.download_url}")
             
-            # Determine download method
             if metadata.download_url.startswith('http'):
                 download_path = self._download_http(metadata, model_dir, download_id)
             else:
-                # Local file copy
                 download_path = self._copy_local(metadata, model_dir, download_id)
             
-            # Update metadata
             metadata.download_progress = 100.0
             metadata.is_downloaded = True
             metadata.updated_at = datetime.now().isoformat()
             
-            # Verify download if requested
             if verify and metadata.checksum:
                 verified = self._verify_checksum(download_path, metadata.checksum)
                 result['verified'] = verified
                 if not verified:
-                    logger.warning(f"Checksum verification failed for {metadata.name}")
+                    self.logger.warning(f"Checksum verification failed for {metadata.name}")
             
-            # Calculate installed size
             installed_size = self._calculate_directory_size(model_dir)
             metadata.installed_size_mb = installed_size / (1024 * 1024)
             
-            # Save metadata
             metadata_path = model_dir / "metadata.json"
             with open(metadata_path, 'w') as f:
                 json.dump(metadata.to_dict(), f, indent=2)
@@ -216,13 +189,11 @@ class ModelDownloader:
                 'download_speed_mbps': (installed_size / duration / (1024 * 1024)) if duration > 0 else 0
             })
             
-            # Update download history
             with self.lock:
                 self.active_downloads.pop(download_id, None)
                 self.download_history.append(result.copy())
             
-            logger.info(f"Download completed: {metadata.name} in {duration:.1f}s")
-            
+            self.logger.info(f"Download completed: {metadata.name} in {duration:.1f}s")
             return result
             
         except Exception as e:
@@ -233,37 +204,20 @@ class ModelDownloader:
                 'duration_seconds': round(duration, 2)
             })
             
-            # Clean up on failure
             try:
                 if model_dir.exists():
                     shutil.rmtree(model_dir)
-            except:
+            except Exception:
                 pass
             
-            with self.lock:
-                self.active_downloads.pop(download_id, None)
+            if download_id:
+                with self.lock:
+                    self.active_downloads.pop(download_id, None)
             
-            logger.error(f"Download failed for {metadata.name}: {e}")
+            self.logger.error(f"Download failed for {metadata.name}: {e}")
             return result
     
-    def _download_http(self, 
-                      metadata: ModelMetadata, 
-                      model_dir: Path,
-                      download_id: str) -> Path:
-        """
-        Download model via HTTP with progress tracking.
-        
-        Args:
-            metadata: Model metadata
-            model_dir: Directory to save model
-            download_id: Download tracking ID
-            
-        Returns:
-            Path to downloaded file
-        """
-        import requests
-        
-        # Determine filename from URL
+    def _download_http(self, metadata: ModelMetadata, model_dir: Path, download_id: str) -> Path:
         filename = metadata.download_url.split('/')[-1]
         if not filename:
             filename = f"{metadata.name}.model"
@@ -271,7 +225,9 @@ class ModelDownloader:
         download_path = model_dir / filename
         
         try:
-            # Start download
+            import requests
+            from tqdm import tqdm
+            
             response = requests.get(metadata.download_url, stream=True, timeout=30)
             response.raise_for_status()
             
@@ -279,11 +235,8 @@ class ModelDownloader:
             chunk_size = 8192
             
             with open(download_path, 'wb') as f:
-                with tqdm(total=total_size, 
-                         unit='B', 
-                         unit_scale=True, 
-                         desc=f"Downloading {metadata.name}",
-                         leave=False) as pbar:
+                with tqdm(total=total_size, unit='B', unit_scale=True, 
+                         desc=f"Downloading {metadata.name}", leave=False) as pbar:
                     
                     downloaded = 0
                     for chunk in response.iter_content(chunk_size=chunk_size):
@@ -292,7 +245,6 @@ class ModelDownloader:
                             downloaded += len(chunk)
                             pbar.update(len(chunk))
                             
-                            # Update progress
                             progress = (downloaded / total_size * 100) if total_size > 0 else 0
                             with self.lock:
                                 if download_id in self.active_downloads:
@@ -305,30 +257,17 @@ class ModelDownloader:
             
             return download_path
             
-        except requests.exceptions.RequestException as e:
+        except ImportError:
+            raise Exception("Required packages not installed: requests, tqdm")
+        except Exception as e:
             raise Exception(f"HTTP download failed: {e}")
     
-    def _copy_local(self, 
-                   metadata: ModelMetadata, 
-                   model_dir: Path,
-                   download_id: str) -> Path:
-        """
-        Copy model from local path.
-        
-        Args:
-            metadata: Model metadata
-            model_dir: Directory to save model
-            download_id: Download tracking ID
-            
-        Returns:
-            Path to copied file
-        """
+    def _copy_local(self, metadata: ModelMetadata, model_dir: Path, download_id: str) -> Path:
         source_path = Path(metadata.download_url)
         
         if not source_path.exists():
             raise Exception(f"Source file not found: {source_path}")
         
-        # Update progress
         with self.lock:
             if download_id in self.active_downloads:
                 self.active_downloads[download_id].update({
@@ -336,11 +275,9 @@ class ModelDownloader:
                     'status': 'copying'
                 })
         
-        # Copy file
         dest_path = model_dir / source_path.name
         shutil.copy2(source_path, dest_path)
         
-        # Update progress
         with self.lock:
             if download_id in self.active_downloads:
                 self.active_downloads[download_id].update({
@@ -351,9 +288,7 @@ class ModelDownloader:
         return dest_path
     
     def _verify_checksum(self, file_path: Path, expected_checksum: str) -> bool:
-        """Verify file checksum."""
         try:
-            # Calculate SHA256
             sha256_hash = hashlib.sha256()
             
             with open(file_path, 'rb') as f:
@@ -364,11 +299,10 @@ class ModelDownloader:
             return actual_checksum == expected_checksum
             
         except Exception as e:
-            logger.warning(f"Checksum verification error: {e}")
+            self.logger.warning(f"Checksum verification error: {e}")
             return False
     
     def _calculate_directory_size(self, directory: Path) -> int:
-        """Calculate total size of directory."""
         total_size = 0
         
         for file_path in directory.rglob('*'):
@@ -378,23 +312,18 @@ class ModelDownloader:
         return total_size
     
     def get_active_downloads(self) -> List[Dict[str, Any]]:
-        """Get list of active downloads."""
         with self.lock:
             return list(self.active_downloads.values())
     
     def get_download_history(self, limit: int = 100) -> List[Dict[str, Any]]:
-        """Get download history."""
         with self.lock:
             return self.download_history[-limit:]
     
     def cancel_download(self, model_name: str) -> bool:
-        """Cancel an active download."""
-        # Implementation would require thread interruption
-        logger.warning(f"Cancelling downloads not fully implemented for {model_name}")
+        self.logger.warning(f"Cancelling downloads not fully implemented for {model_name}")
         return True
     
     def cleanup_downloads(self, max_age_days: int = 30) -> Dict[str, Any]:
-        """Clean up old downloads."""
         cutoff_time = time.time() - (max_age_days * 24 * 60 * 60)
         removed = 0
         total_freed = 0
@@ -407,7 +336,6 @@ class ModelDownloader:
                 if not model_dir.is_dir():
                     continue
                 
-                # Check last modified time
                 try:
                     mtime = model_dir.stat().st_mtime
                     if mtime < cutoff_time:
@@ -416,7 +344,7 @@ class ModelDownloader:
                         removed += 1
                         total_freed += size
                 except Exception as e:
-                    logger.warning(f"Failed to cleanup {model_dir}: {e}")
+                    self.logger.warning(f"Failed to cleanup {model_dir}: {e}")
         
         return {
             'removed_count': removed,
@@ -429,16 +357,13 @@ class ModelRegistry:
     """Registry for all available models."""
     
     def __init__(self):
-        """Initialize model registry."""
         self.llm_models: Dict[str, ModelMetadata] = {}
         self.embedding_models: Dict[str, ModelMetadata] = {}
         self.custom_models: Dict[str, ModelMetadata] = {}
         
         self._initialize_default_models()
     
-    def _initialize_default_models(self):
-        """Initialize default model configurations."""
-        # Default LLM models
+    def _initialize_default_models(self) -> None:
         self.llm_models = {
             "llama2:7b": ModelMetadata(
                 name="llama2:7b",
@@ -490,7 +415,6 @@ class ModelRegistry:
             )
         }
         
-        # Default embedding models
         self.embedding_models = {
             "all-MiniLM-L6-v2": ModelMetadata(
                 name="all-MiniLM-L6-v2",
@@ -546,14 +470,11 @@ class ModelRegistry:
         }
     
     def get_model(self, model_name: str, model_type: Optional[str] = None) -> Optional[ModelMetadata]:
-        """Get model metadata by name."""
-        # Try specific type first
         if model_type == "llm":
             return self.llm_models.get(model_name)
         elif model_type == "embedding":
             return self.embedding_models.get(model_name)
         
-        # Search all registries
         for registry in [self.llm_models, self.embedding_models, self.custom_models]:
             if model_name in registry:
                 return registry[model_name]
@@ -561,7 +482,6 @@ class ModelRegistry:
         return None
     
     def get_all_models(self, model_type: Optional[str] = None) -> List[ModelMetadata]:
-        """Get all models, optionally filtered by type."""
         if model_type == "llm":
             return list(self.llm_models.values())
         elif model_type == "embedding":
@@ -569,14 +489,12 @@ class ModelRegistry:
         elif model_type == "custom":
             return list(self.custom_models.values())
         else:
-            # All models
             all_models = list(self.llm_models.values())
             all_models.extend(self.embedding_models.values())
             all_models.extend(self.custom_models.values())
             return all_models
     
     def register_model(self, metadata: ModelMetadata) -> bool:
-        """Register a custom model."""
         try:
             if metadata.model_type == "llm":
                 self.llm_models[metadata.name] = metadata
@@ -585,24 +503,22 @@ class ModelRegistry:
             else:
                 self.custom_models[metadata.name] = metadata
             
-            logger.info(f"Registered model: {metadata.name} ({metadata.model_type})")
+            logging.info(f"Registered model: {metadata.name} ({metadata.model_type})")
             return True
         except Exception as e:
-            logger.error(f"Failed to register model: {e}")
+            logging.error(f"Failed to register model: {e}")
             return False
     
     def unregister_model(self, model_name: str) -> bool:
-        """Unregister a model."""
         for registry in [self.llm_models, self.embedding_models, self.custom_models]:
             if model_name in registry:
                 del registry[model_name]
-                logger.info(f"Unregistered model: {model_name}")
+                logging.info(f"Unregistered model: {model_name}")
                 return True
         
         return False
     
     def get_default_model(self, model_type: str) -> Optional[ModelMetadata]:
-        """Get default model for type."""
         if model_type == "llm":
             for model in self.llm_models.values():
                 if model.is_default:
@@ -615,12 +531,10 @@ class ModelRegistry:
         return None
     
     def set_default_model(self, model_name: str, model_type: str) -> bool:
-        """Set default model for type."""
         model = self.get_model(model_name, model_type)
         if not model:
             return False
         
-        # Clear existing default
         if model_type == "llm":
             for m in self.llm_models.values():
                 m.is_default = False
@@ -630,7 +544,7 @@ class ModelRegistry:
                 m.is_default = False
             self.embedding_models[model_name].is_default = True
         
-        logger.info(f"Set default {model_type} model to: {model_name}")
+        logging.info(f"Set default {model_type} model to: {model_name}")
         return True
 
 
@@ -638,23 +552,25 @@ class SystemResourceMonitor:
     """Monitors system resources for model requirements."""
     
     def __init__(self):
-        """Initialize resource monitor."""
         self.history: List[Dict[str, Any]] = []
         self.max_history = 1000
+        self.logger = logging.getLogger(__name__)
     
     def get_system_resources(self) -> Dict[str, Any]:
-        """Get current system resource information."""
         try:
-            # CPU information
+            if not PSUTIL_AVAILABLE:
+                return {
+                    'error': 'psutil not installed',
+                    'timestamp': datetime.now().isoformat()
+                }
+            
             cpu_cores = os.cpu_count() or 1
             cpu_percent = psutil.cpu_percent(interval=0.1)
             cpu_freq = psutil.cpu_freq()
             
-            # RAM information
             memory = psutil.virtual_memory()
             swap = psutil.swap_memory()
             
-            # Disk information (check multiple locations)
             disk_info = {}
             for path in [Path.home(), Path.home() / ".docubot", Path("/")]:
                 try:
@@ -665,16 +581,12 @@ class SystemResourceMonitor:
                         'used_gb': usage.used / (1024 ** 3),
                         'percent': usage.percent
                     }
-                except:
+                except Exception:
                     continue
             
-            # GPU information
             gpu_info = self._get_gpu_info()
-            
-            # Network information
             net_io = psutil.net_io_counters()
             
-            # System information
             import platform
             system_info = {
                 'system': platform.system(),
@@ -713,7 +625,6 @@ class SystemResourceMonitor:
                 'uptime_seconds': time.time() - psutil.boot_time()
             }
             
-            # Store in history
             self.history.append(resources.copy())
             if len(self.history) > self.max_history:
                 self.history = self.history[-self.max_history:]
@@ -721,15 +632,15 @@ class SystemResourceMonitor:
             return resources
             
         except Exception as e:
-            logger.error(f"Error getting system resources: {e}")
+            self.logger.error(f"Error getting system resources: {e}")
             return {
                 'error': str(e),
                 'timestamp': datetime.now().isoformat()
             }
     
     def _get_gpu_info(self) -> Dict[str, Any]:
-        """Get GPU information if available."""
         try:
+            import torch
             if not torch.cuda.is_available():
                 return {
                     'available': False,
@@ -760,23 +671,16 @@ class SystemResourceMonitor:
                 'devices': devices
             }
             
+        except ImportError:
+            return {'available': False, 'error': 'torch not installed'}
         except Exception as e:
-            logger.warning(f"Error getting GPU info: {e}")
+            self.logger.warning(f"Error getting GPU info: {e}")
             return {
                 'available': False,
                 'error': str(e)
             }
     
     def check_requirements(self, requirements: ModelRequirements) -> Dict[str, Any]:
-        """
-        Check if system meets model requirements.
-        
-        Args:
-            requirements: Model requirements to check
-            
-        Returns:
-            Requirements check results
-        """
         resources = self.get_system_resources()
         
         if 'error' in resources:
@@ -789,7 +693,6 @@ class SystemResourceMonitor:
         
         checks = {}
         
-        # Check RAM
         ram_total_gb = resources['ram']['total_gb']
         ram_ok = ram_total_gb >= requirements.ram_gb
         checks['ram'] = {
@@ -799,7 +702,6 @@ class SystemResourceMonitor:
             'message': f"RAM: {ram_total_gb:.1f}GB / {requirements.ram_gb}GB required"
         }
         
-        # Check CPU cores
         cpu_cores = resources['cpu']['cores']
         cpu_ok = cpu_cores >= requirements.cpu_cores
         checks['cpu'] = {
@@ -809,7 +711,6 @@ class SystemResourceMonitor:
             'message': f"CPU Cores: {cpu_cores} / {requirements.cpu_cores} required"
         }
         
-        # Check disk space (use home directory)
         home_disk = resources['disk'].get(str(Path.home()), {})
         disk_free_gb = home_disk.get('free_gb', 0)
         disk_ok = disk_free_gb >= requirements.storage_gb
@@ -820,7 +721,6 @@ class SystemResourceMonitor:
             'message': f"Disk Space: {disk_free_gb:.1f}GB / {requirements.storage_gb}GB required"
         }
         
-        # Check GPU if required
         if requirements.gpu_vram_gb:
             gpu_available = resources['gpu']['available']
             if gpu_available and resources['gpu']['count'] > 0:
@@ -840,14 +740,16 @@ class SystemResourceMonitor:
                     'message': "GPU required but not available"
                 }
         
-        # Check Python version
         python_version = resources['system']['python_version']
-        import packaging.version
+        
         try:
+            import packaging.version
             current_version = packaging.version.parse(python_version)
             required_version = packaging.version.parse(requirements.python_version)
             python_ok = current_version >= required_version
-        except:
+        except ImportError:
+            python_ok = python_version >= requirements.python_version
+        except Exception:
             python_ok = False
         
         checks['python'] = {
@@ -857,7 +759,6 @@ class SystemResourceMonitor:
             'message': f"Python: {python_version} / {requirements.python_version} required"
         }
         
-        # Overall result
         all_met = all(check['met'] for check in checks.values())
         
         return {
@@ -867,10 +768,7 @@ class SystemResourceMonitor:
             'timestamp': datetime.now().isoformat()
         }
     
-    def get_resource_history(self, 
-                           metric: str = 'ram.percent',
-                           time_window_minutes: int = 60) -> List[Dict[str, Any]]:
-        """Get resource history for a specific metric."""
+    def get_resource_history(self, metric: str = 'ram.percent', time_window_minutes: int = 60) -> List[Dict[str, Any]]:
         cutoff_time = time.time() - (time_window_minutes * 60)
         
         history = []
@@ -879,20 +777,18 @@ class SystemResourceMonitor:
                 try:
                     entry_time = datetime.fromisoformat(entry['timestamp']).timestamp()
                     if entry_time >= cutoff_time:
-                        # Extract metric value
                         value = self._extract_nested_value(entry, metric)
                         if value is not None:
                             history.append({
                                 'timestamp': entry['timestamp'],
                                 'value': value
                             })
-                except:
+                except Exception:
                     continue
         
         return history
     
-    def _extract_nested_value(self, data: Dict, path: str) -> Any:
-        """Extract value from nested dictionary using dot notation."""
+    def _extract_nested_value(self, data: Dict[str, Any], path: str) -> Any:
         keys = path.split('.')
         current = data
         
@@ -905,7 +801,6 @@ class SystemResourceMonitor:
         return current
     
     def get_resource_summary(self) -> Dict[str, Any]:
-        """Get summary of system resources."""
         resources = self.get_system_resources()
         
         if 'error' in resources:
@@ -936,41 +831,25 @@ class SystemResourceMonitor:
 
 
 class ModelManager:
-    """
-    Main model manager for DocuBot.
-    Coordinates model registry, downloading, validation, and system monitoring.
-    """
+    """Main model manager for DocuBot."""
     
     def __init__(self, config: Optional[Dict[str, Any]] = None):
-        """
-        Initialize model manager.
-        
-        Args:
-            config: Configuration dictionary
-        """
         self.config = config or {}
         
-        # Initialize components
         self.registry = ModelRegistry()
-        self.downloader = ModelDownloader(
-            self.config.get('download_dir')
-        )
+        self.downloader = ModelDownloader(self.config.get('download_dir'))
         self.resource_monitor = SystemResourceMonitor()
         
-        # Active model tracking
         self.active_models: Dict[str, ModelMetadata] = {}
-        
-        # Performance tracking
         self.model_usage: Dict[str, Dict[str, Any]] = {}
         
-        # Ollama integration
         self.ollama_available = self._check_ollama_available()
         
-        logger.info("ModelManager initialized")
-        logger.info(f"Ollama available: {self.ollama_available}")
+        self.logger = logging.getLogger(__name__)
+        self.logger.info("ModelManager initialized")
+        self.logger.info(f"Ollama available: {self.ollama_available}")
     
     def _check_ollama_available(self) -> bool:
-        """Check if Ollama is installed and available."""
         try:
             result = subprocess.run(
                 ['ollama', '--version'],
@@ -982,22 +861,10 @@ class ModelManager:
         except (FileNotFoundError, subprocess.TimeoutExpired):
             return False
         except Exception as e:
-            logger.warning(f"Error checking Ollama: {e}")
+            self.logger.warning(f"Error checking Ollama: {e}")
             return False
     
-    def get_available_models(self, 
-                           model_type: Optional[str] = None,
-                           include_status: bool = True) -> List[Dict[str, Any]]:
-        """
-        Get available models with optional status information.
-        
-        Args:
-            model_type: Filter by model type ('llm', 'embedding', 'custom')
-            include_status: Include download and system check status
-            
-        Returns:
-            List of model information dictionaries
-        """
+    def get_available_models(self, model_type: Optional[str] = None, include_status: bool = True) -> List[Dict[str, Any]]:
         models = self.registry.get_all_models(model_type)
         result = []
         
@@ -1005,18 +872,14 @@ class ModelManager:
             model_info = model.to_dict()
             
             if include_status:
-                # Add system requirement check
                 requirements_check = self.resource_monitor.check_requirements(model.requirements)
                 model_info['requirements_check'] = requirements_check
                 
-                # Add download status (check local files)
                 model_info['is_downloaded'] = self._check_model_downloaded(model)
                 
-                # Add Ollama status for LLMs
                 if model.model_type == "llm":
                     model_info['ollama_available'] = self.ollama_available
                 
-                # Add usage statistics
                 if model.name in self.model_usage:
                     model_info['usage_stats'] = self.model_usage[model.name]
             
@@ -1025,19 +888,14 @@ class ModelManager:
         return result
     
     def _check_model_downloaded(self, model: ModelMetadata) -> bool:
-        """Check if model is downloaded locally."""
-        # For embedding models, check sentence-transformers cache
         if model.model_type == "embedding":
             try:
                 from sentence_transformers import SentenceTransformer
-                
-                # Try to load model
                 SentenceTransformer(model.name)
                 return True
-            except:
+            except Exception:
                 return False
         
-        # For LLM models, check Ollama
         elif model.model_type == "llm" and self.ollama_available:
             try:
                 result = subprocess.run(
@@ -1048,29 +906,16 @@ class ModelManager:
                 )
                 
                 if result.returncode == 0:
-                    # Parse output to find model
                     lines = result.stdout.strip().split('\n')
                     for line in lines:
                         if model.name in line:
                             return True
-            except:
+            except Exception:
                 pass
         
         return False
     
-    def get_model_info(self, 
-                      model_name: str, 
-                      model_type: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Get detailed information about a specific model.
-        
-        Args:
-            model_name: Name of the model
-            model_type: Optional model type filter
-            
-        Returns:
-            Model information dictionary
-        """
+    def get_model_info(self, model_name: str, model_type: Optional[str] = None) -> Dict[str, Any]:
         model = self.registry.get_model(model_name, model_type)
         
         if not model:
@@ -1081,46 +926,26 @@ class ModelManager:
             }
         
         model_info = model.to_dict()
-        
-        # Add system requirement check
         requirements_check = self.resource_monitor.check_requirements(model.requirements)
         model_info['requirements_check'] = requirements_check
-        
-        # Add download status
         model_info['is_downloaded'] = self._check_model_downloaded(model)
         
-        # Add installation path if downloaded
-        if model_info['is_downloaded']:
-            if model.model_type == "embedding":
-                try:
-                    import sentence_transformers
-                    model_info['install_path'] = sentence_transformers.util.get_cache_folder()
-                except:
-                    pass
+        if model_info['is_downloaded'] and model.model_type == "embedding":
+            try:
+                import sentence_transformers
+                model_info['install_path'] = sentence_transformers.util.get_cache_folder()
+            except Exception:
+                pass
         
-        # Add usage statistics
         if model_name in self.model_usage:
             model_info['usage_stats'] = self.model_usage[model_name]
         
-        # Add to active models if currently in use
         model_info['is_active'] = model_name in self.active_models
-        
         model_info['success'] = True
+        
         return model_info
     
-    def validate_model_download(self, 
-                               model_name: str, 
-                               model_type: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Validate if a model can be downloaded.
-        
-        Args:
-            model_name: Name of the model
-            model_type: Optional model type filter
-            
-        Returns:
-            Validation results
-        """
+    def validate_model_download(self, model_name: str, model_type: Optional[str] = None) -> Dict[str, Any]:
         model = self.registry.get_model(model_name, model_type)
         
         if not model:
@@ -1132,23 +957,14 @@ class ModelManager:
                 'timestamp': datetime.now().isoformat()
             }
         
-        # Check system requirements
         requirements_check = self.resource_monitor.check_requirements(model.requirements)
-        
-        # Check disk space
         disk_ok = self._check_disk_space(model.download_size_mb / 1024)
         
-        # Check network connectivity (for remote downloads)
         network_ok = True
         if model.download_url and model.download_url.startswith('http'):
             network_ok = self._check_network_connectivity(model.download_url)
         
-        # Overall validation
-        valid = (
-            requirements_check['requirements_met'] and 
-            disk_ok and 
-            network_ok
-        )
+        valid = requirements_check['requirements_met'] and disk_ok and network_ok
         
         result = {
             'success': True,
@@ -1159,15 +975,11 @@ class ModelManager:
             'disk_space_ok': disk_ok,
             'network_ok': network_ok,
             'download_size_mb': model.download_size_mb,
-            'message': (
-                f"Model {model_name} can be downloaded" if valid
-                else "System requirements not met for download"
-            ),
+            'message': f"Model {model_name} can be downloaded" if valid else "System requirements not met for download",
             'timestamp': datetime.now().isoformat()
         }
         
         if not valid:
-            # Add specific reasons
             issues = []
             if not requirements_check['requirements_met']:
                 issues.append("System requirements not met")
@@ -1175,48 +987,40 @@ class ModelManager:
                 issues.append("Insufficient disk space")
             if not network_ok:
                 issues.append("Network connectivity issue")
-            
             result['issues'] = issues
         
         return result
     
     def _check_disk_space(self, required_gb: float) -> bool:
-        """Check if sufficient disk space is available."""
         try:
-            # Check home directory (where models are typically stored)
+            if not PSUTIL_AVAILABLE:
+                return False
+            
             home_usage = psutil.disk_usage(str(Path.home()))
             free_gb = home_usage.free / (1024 ** 3)
-            
             return free_gb >= required_gb
         except Exception as e:
-            logger.warning(f"Error checking disk space: {e}")
+            self.logger.warning(f"Error checking disk space: {e}")
             return False
     
     def _check_network_connectivity(self, url: str) -> bool:
-        """Check network connectivity to a URL."""
         try:
             import urllib.request
             import socket
             
-            # Set timeout
             socket.setdefaulttimeout(5)
-            
-            # Try to connect
             hostname = urllib.request.urlparse(url).hostname
             if hostname:
                 socket.gethostbyname(hostname)
                 return True
-        except:
+        except Exception:
             pass
         
         return False
     
-    def download_model(self, 
-                      model_name: str, 
-                      model_type: Optional[str] = None,
+    def download_model(self, model_name: str, model_type: Optional[str] = None, 
                       force: bool = False) -> Dict[str, Any]:
-        """
-        Download a model.
+        """Download a model.
         
         Args:
             model_name: Name of the model
@@ -1226,58 +1030,57 @@ class ModelManager:
         Returns:
             Download results
         """
-        # Validate first
-        validation = self.validate_model_download(model_name, model_type)
-        if not validation['valid']:
-            validation['success'] = False
-            return validation
-        
-        model = self.registry.get_model(model_name, model_type)
-        if not model:
-            return {
-                'success': False,
-                'message': f"Model not found: {model_name}",
-                'model_name': model_name
-            }
-        
-        # Check if already downloaded
-        if self._check_model_downloaded(model) and not force:
-            return {
-                'success': True,
-                'message': f"Model already downloaded: {model_name}",
-                'model_name': model_name,
-                'skipped': True
-            }
-        
-        # Start download
-        download_result = self.downloader.download_model(model, force)
-        
-        # Update model metadata
-        if download_result['success']:
-            model.is_downloaded = True
-            model.updated_at = datetime.now().isoformat()
-            
-            # Update registry
-            self.registry.register_model(model)
-        
-        return download_result
+        if model_type == "llm" and self.ollama_available:
+            try:
+                result = subprocess.run(
+                    ['ollama', 'pull', model_name],
+                    capture_output=True,
+                    text=True,
+                    timeout=300
+                )
+                if result.returncode == 0:
+                    model = self.registry.get_model(model_name, model_type)
+                    if model:
+                        model.is_downloaded = True
+                        model.updated_at = datetime.now().isoformat()
+                    
+                    return {
+                        'success': True,
+                        'message': f"Model {model_name} downloaded successfully via Ollama",
+                        'model_name': model_name,
+                        'download_method': 'ollama_pull'
+                    }
+                else:
+                    return {
+                        'success': False,
+                        'message': f"Failed to download {model_name} via Ollama: {result.stderr}",
+                        'model_name': model_name,
+                        'download_method': 'ollama_pull'
+                    }
+            except Exception as e:
+                return {
+                    'success': False,
+                    'message': f"Error downloading {model_name} via Ollama: {e}",
+                    'model_name': model_name,
+                    'download_method': 'ollama_pull'
+                }
+        else:
+            model = self.registry.get_model(model_name, model_type)
+            if model:
+                return self.downloader.download_model(model, force)
+            else:
+                return {
+                    'success': False,
+                    'message': f"Model not found: {model_name}",
+                    'model_name': model_name,
+                    'download_method': 'standard'
+                }
     
     def get_system_resources(self) -> Dict[str, Any]:
-        """Get current system resource information."""
         return self.resource_monitor.get_system_resources()
     
     def check_system_requirements(self, min_requirements: Optional[ModelRequirements] = None) -> Dict[str, Any]:
-        """
-        Check system against minimum requirements.
-        
-        Args:
-            min_requirements: Minimum requirements to check
-            
-        Returns:
-            Requirements check results
-        """
         if not min_requirements:
-            # Use default minimum requirements
             min_requirements = ModelRequirements(
                 ram_gb=8.0,
                 storage_gb=10.0,
@@ -1287,16 +1090,6 @@ class ModelManager:
         return self.resource_monitor.check_requirements(min_requirements)
     
     def validate_model_files(self, model_name: str, model_type: Optional[str] = None) -> Dict[str, Any]:
-        """
-        Validate existing model files.
-        
-        Args:
-            model_name: Name of the model
-            model_type: Optional model type filter
-            
-        Returns:
-            Validation results
-        """
         model = self.registry.get_model(model_name, model_type)
         
         if not model:
@@ -1307,7 +1100,6 @@ class ModelManager:
                 'model_name': model_name
             }
         
-        # Check if downloaded
         if not self._check_model_downloaded(model):
             return {
                 'success': True,
@@ -1318,7 +1110,6 @@ class ModelManager:
                 'files_missing': ['model_files']
             }
         
-        # For embedding models, validate files
         if model.model_type == "embedding":
             return self._validate_embedding_model_files(model)
         elif model.model_type == "llm":
@@ -1332,11 +1123,8 @@ class ModelManager:
         }
     
     def _validate_embedding_model_files(self, model: ModelMetadata) -> Dict[str, Any]:
-        """Validate embedding model files."""
         try:
             from sentence_transformers import SentenceTransformer
-            
-            # Try to load model
             SentenceTransformer(model.name)
             
             return {
@@ -1358,7 +1146,6 @@ class ModelManager:
             }
     
     def _validate_llm_model_files(self, model: ModelMetadata) -> Dict[str, Any]:
-        """Validate LLM model files (via Ollama)."""
         if not self.ollama_available:
             return {
                 'success': False,
@@ -1383,7 +1170,6 @@ class ModelManager:
                     'model_name': model.name
                 }
             
-            # Check if model is in list
             lines = result.stdout.strip().split('\n')
             for line in lines:
                 if model.name in line:
@@ -1414,31 +1200,18 @@ class ModelManager:
             }
     
     def set_active_model(self, model_name: str, model_type: str) -> bool:
-        """
-        Set a model as active for its type.
-        
-        Args:
-            model_name: Name of the model
-            model_type: Type of model ('llm', 'embedding')
-            
-        Returns:
-            True if successful
-        """
         model = self.registry.get_model(model_name, model_type)
         
         if not model:
-            logger.error(f"Cannot set active model: {model_name} not found")
+            self.logger.error(f"Cannot set active model: {model_name} not found")
             return False
         
-        # Check if model is downloaded
         if not self._check_model_downloaded(model):
-            logger.error(f"Cannot set active model: {model_name} not downloaded")
+            self.logger.error(f"Cannot set active model: {model_name} not downloaded")
             return False
         
-        # Set as active
         self.active_models[model_type] = model
         
-        # Update usage statistics
         if model_name not in self.model_usage:
             self.model_usage[model_name] = {
                 'activation_count': 0,
@@ -1449,57 +1222,35 @@ class ModelManager:
         self.model_usage[model_name]['activation_count'] += 1
         self.model_usage[model_name]['last_activated'] = datetime.now().isoformat()
         
-        # Set as default in registry
         self.registry.set_default_model(model_name, model_type)
         
-        logger.info(f"Set active {model_type} model to: {model_name}")
+        self.logger.info(f"Set active {model_type} model to: {model_name}")
         return True
     
     def get_active_model(self, model_type: str) -> Optional[ModelMetadata]:
-        """
-        Get the currently active model for a type.
-        
-        Args:
-            model_type: Type of model ('llm', 'embedding')
-            
-        Returns:
-            Active model metadata or None
-        """
         return self.active_models.get(model_type)
     
     def health_check(self) -> Dict[str, Any]:
-        """
-        Perform health check of model management system.
-        
-        Returns:
-            Health check results
-        """
         start_time = time.time()
         
         try:
-            # Get system resources
             resources = self.get_system_resources()
             resources_ok = 'error' not in resources
             
-            # Check system requirements
             sys_req_check = self.check_system_requirements()
             sys_req_ok = sys_req_check['requirements_met']
             
-            # Check Ollama availability
             ollama_ok = self.ollama_available
             
-            # Check default models
             default_llm = self.registry.get_default_model('llm')
             default_embedding = self.registry.get_default_model('embedding')
             
             default_llm_ok = default_llm is not None
             default_embedding_ok = default_embedding is not None
             
-            # Check if default models are downloaded
             default_llm_downloaded = default_llm_ok and self._check_model_downloaded(default_llm)
             default_embedding_downloaded = default_embedding_ok and self._check_model_downloaded(default_embedding)
             
-            # Calculate health score (0-100)
             health_score = 0
             
             if resources_ok:
@@ -1523,7 +1274,6 @@ class ModelManager:
             if default_embedding_downloaded:
                 health_score += 20
             
-            # Determine status
             if health_score >= 80:
                 status = "healthy"
             elif health_score >= 50:
@@ -1559,7 +1309,6 @@ class ModelManager:
                 'timestamp': datetime.now().isoformat()
             }
             
-            # Generate recommendations
             if not resources_ok:
                 result['recommendations'].append("Check system resource monitoring")
             
@@ -1584,7 +1333,7 @@ class ModelManager:
             return result
             
         except Exception as e:
-            logger.error(f"Health check failed: {e}")
+            self.logger.error(f"Health check failed: {e}")
             return {
                 'success': False,
                 'status': 'unhealthy',
@@ -1595,7 +1344,6 @@ class ModelManager:
             }
     
     def get_download_status(self) -> Dict[str, Any]:
-        """Get current download status and history."""
         return {
             'active_downloads': self.downloader.get_active_downloads(),
             'download_history': self.downloader.get_download_history(limit=20),
@@ -1603,15 +1351,6 @@ class ModelManager:
         }
     
     def format_file_size(self, size_bytes: int) -> str:
-        """
-        Format file size in human readable format.
-        
-        Args:
-            size_bytes: Size in bytes
-            
-        Returns:
-            Formatted size string
-        """
         for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
             if size_bytes < 1024.0:
                 return f"{size_bytes:.2f} {unit}"
@@ -1620,41 +1359,342 @@ class ModelManager:
         return f"{size_bytes:.2f} PB"
     
     def cleanup(self, max_age_days: int = 30) -> Dict[str, Any]:
-        """
-        Clean up old downloads and cache.
-        
-        Args:
-            max_age_days: Maximum age of files to keep
-            
-        Returns:
-            Cleanup results
-        """
         cleanup_result = self.downloader.cleanup_downloads(max_age_days)
         
-        logger.info(f"Cleanup completed: {cleanup_result['removed_count']} items removed, "
-                   f"{cleanup_result['freed_mb']:.1f} MB freed")
+        self.logger.info(f"Cleanup completed: {cleanup_result['removed_count']} items removed, "
+                       f"{cleanup_result['freed_mb']:.1f} MB freed")
         
         return cleanup_result
-
-
-# Factory function
-def get_model_manager(config: Optional[Dict[str, Any]] = None) -> ModelManager:
-    """
-    Get or create a ModelManager instance.
     
-    Args:
-        config: Configuration dictionary
+    def compare_models(self, model_names: List[str], model_type: Optional[str] = None) -> Dict[str, Any]:
+        """Compare multiple models based on their specifications, requirements, and system compatibility."""
+        comparison_result = {
+            'success': False,
+            'models': [],
+            'comparison_metrics': {},
+            'recommendations': [],
+            'timestamp': datetime.now().isoformat()
+        }
         
-    Returns:
-        ModelManager instance
-    """
+        try:
+            models = []
+            
+            for model_name in model_names:
+                model_info = self.get_model_info(model_name, model_type)
+                if not model_info.get('success', False):
+                    self.logger.warning(f"Model not found for comparison: {model_name}")
+                    continue
+                
+                models.append(model_info)
+            
+            if len(models) < 2:
+                comparison_result['message'] = "At least two valid models required for comparison"
+                return comparison_result
+            
+            comparison_result['success'] = True
+            comparison_result['models'] = models
+            
+            comparison_metrics = self._generate_comparison_metrics(models)
+            comparison_result['comparison_metrics'] = comparison_metrics
+            
+            recommendations = self._generate_model_recommendations(models, comparison_metrics)
+            comparison_result['recommendations'] = recommendations
+            
+            best_model = self._select_best_model(models, comparison_metrics)
+            if best_model:
+                comparison_result['best_model'] = best_model
+            
+            comparison_result['message'] = f"Successfully compared {len(models)} models"
+            
+        except Exception as e:
+            comparison_result['message'] = f"Error comparing models: {str(e)}"
+            self.logger.error(f"Comparison failed: {e}")
+        
+        return comparison_result
+    
+    def _generate_comparison_metrics(self, models: List[Dict[str, Any]]) -> Dict[str, Any]:
+        metrics = {
+            'performance': [],
+            'resource_requirements': [],
+            'system_compatibility': [],
+            'model_specifications': []
+        }
+        
+        for model in models:
+            model_name = model['name']
+            
+            performance_score = self._calculate_performance_score(model)
+            metrics['performance'].append({
+                'model': model_name,
+                'score': performance_score,
+                'parameters_billion': model.get('parameters_billion', 0),
+                'context_length': model.get('context_length', 0),
+                'embedding_dimensions': model.get('embedding_dimensions', 0)
+            })
+            
+            resource_score = self._calculate_resource_score(model)
+            metrics['resource_requirements'].append({
+                'model': model_name,
+                'score': resource_score,
+                'ram_gb': model.get('requirements', {}).get('ram_gb', 0),
+                'storage_gb': model.get('requirements', {}).get('storage_gb', 0),
+                'gpu_vram_gb': model.get('requirements', {}).get('gpu_vram_gb', 0),
+                'cpu_cores': model.get('requirements', {}).get('cpu_cores', 0)
+            })
+            
+            compatibility_check = model.get('requirements_check', {})
+            if compatibility_check.get('success', False):
+                compatibility_score = sum(
+                    1 for check in compatibility_check.get('details', {}).values() 
+                    if check.get('met', False)
+                ) / len(compatibility_check.get('details', {})) * 100 if compatibility_check.get('details', {}) else 0
+                
+                metrics['system_compatibility'].append({
+                    'model': model_name,
+                    'score': compatibility_score,
+                    'requirements_met': compatibility_check.get('requirements_met', False),
+                    'details': compatibility_check.get('details', {})
+                })
+            
+            model_type = model.get('model_type', '')
+            if model_type == 'embedding':
+                spec_score = self._calculate_embedding_spec_score(model)
+            elif model_type == 'llm':
+                spec_score = self._calculate_llm_spec_score(model)
+            else:
+                spec_score = 50
+            
+            metrics['model_specifications'].append({
+                'model': model_name,
+                'score': spec_score,
+                'model_type': model_type,
+                'provider': model.get('provider', ''),
+                'version': model.get('version', ''),
+                'download_size_mb': model.get('download_size_mb', 0)
+            })
+        
+        return metrics
+    
+    def _calculate_performance_score(self, model: Dict[str, Any]) -> float:
+        score = 50.0
+        
+        model_type = model.get('model_type', '')
+        
+        if model_type == 'embedding':
+            dimensions = model.get('embedding_dimensions', 0)
+            context_length = model.get('context_length', 0)
+            
+            dimension_score = min(dimensions / 768 * 50, 50) if dimensions else 25
+            context_score = min(context_length / 512 * 25, 25) if context_length else 12.5
+            
+            score = dimension_score + context_score
+        
+        elif model_type == 'llm':
+            parameters = model.get('parameters_billion', 0)
+            context_length = model.get('context_length', 0)
+            
+            parameter_score = min(parameters / 13 * 40, 40) if parameters else 20
+            context_score = min(context_length / 8192 * 35, 35) if context_length else 17.5
+            
+            score = parameter_score + context_score
+        
+        return round(score, 2)
+    
+    def _calculate_resource_score(self, model: Dict[str, Any]) -> float:
+        requirements = model.get('requirements', {})
+        
+        if not requirements:
+            return 50.0
+        
+        ram_gb = requirements.get('ram_gb', 0)
+        storage_gb = requirements.get('storage_gb', 0)
+        cpu_cores = requirements.get('cpu_cores', 0)
+        
+        if ram_gb == 0 or storage_gb == 0 or cpu_cores == 0:
+            return 50.0
+        
+        ram_score = max(0, 100 - (ram_gb / 16 * 50))
+        storage_score = max(0, 100 - (storage_gb / 10 * 30))
+        cpu_score = max(0, 100 - (cpu_cores / 8 * 20))
+        
+        total_score = (ram_score * 0.5) + (storage_score * 0.3) + (cpu_score * 0.2)
+        
+        return round(total_score, 2)
+    
+    def _calculate_embedding_spec_score(self, model: Dict[str, Any]) -> float:
+        score = 50.0
+        
+        dimensions = model.get('embedding_dimensions', 0)
+        context_length = model.get('context_length', 0)
+        provider = model.get('provider', '').lower()
+        
+        if dimensions >= 768:
+            score += 20
+        elif dimensions >= 384:
+            score += 10
+        
+        if context_length >= 512:
+            score += 15
+        elif context_length >= 256:
+            score += 10
+        
+        if 'sentence-transformers' in provider:
+            score += 15
+        
+        return min(score, 100)
+    
+    def _calculate_llm_spec_score(self, model: Dict[str, Any]) -> float:
+        score = 50.0
+        
+        parameters = model.get('parameters_billion', 0)
+        context_length = model.get('context_length', 0)
+        provider = model.get('provider', '').lower()
+        
+        if parameters >= 13:
+            score += 25
+        elif parameters >= 7:
+            score += 15
+        elif parameters >= 3:
+            score += 5
+        
+        if context_length >= 8192:
+            score += 20
+        elif context_length >= 4096:
+            score += 10
+        
+        if 'ollama' in provider:
+            score += 10
+        
+        return min(score, 100)
+    
+    def _generate_model_recommendations(self, models: List[Dict[str, Any]], metrics: Dict[str, Any]) -> List[str]:
+        recommendations = []
+        
+        if not models or not metrics:
+            return recommendations
+        
+        performance_scores = metrics.get('performance', [])
+        resource_scores = metrics.get('resource_requirements', [])
+        compatibility_scores = metrics.get('system_compatibility', [])
+        
+        if performance_scores and resource_scores:
+            performance_ranking = sorted(performance_scores, key=lambda x: x['score'], reverse=True)
+            resource_ranking = sorted(resource_scores, key=lambda x: x['score'], reverse=True)
+            
+            if performance_ranking and resource_ranking:
+                best_perf_model = performance_ranking[0]['model']
+                best_resource_model = resource_ranking[0]['model']
+                
+                if best_perf_model == best_resource_model:
+                    recommendations.append(f"Model '{best_perf_model}' offers the best balance of performance and resource efficiency")
+                else:
+                    recommendations.append(f"For maximum performance: '{best_perf_model}'")
+                    recommendations.append(f"For resource efficiency: '{best_resource_model}'")
+        
+        for comp in compatibility_scores:
+            if not comp.get('requirements_met', False):
+                model_name = comp['model']
+                recommendations.append(f"Model '{model_name}' does not meet system requirements - consider upgrading hardware")
+        
+        model_types = set(model.get('model_type', '') for model in models)
+        if 'embedding' in model_types and 'llm' in model_types:
+            embedding_models = [m for m in models if m.get('model_type') == 'embedding']
+            llm_models = [m for m in models if m.get('model_type') == 'llm']
+            
+            if embedding_models and llm_models:
+                best_embedding = max(embedding_models, key=lambda x: self._calculate_performance_score(x))
+                best_llm = max(llm_models, key=lambda x: self._calculate_performance_score(x))
+                
+                recommendations.append(f"Recommended embedding model for this system: '{best_embedding['name']}'")
+                recommendations.append(f"Recommended LLM model for this system: '{best_llm['name']}'")
+        
+        return recommendations
+    
+    def _select_best_model(self, models: List[Dict[str, Any]], metrics: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        if not models or not metrics:
+            return None
+        
+        performance_scores = {item['model']: item['score'] for item in metrics.get('performance', [])}
+        resource_scores = {item['model']: item['score'] for item in metrics.get('resource_requirements', [])}
+        
+        weighted_scores = {}
+        
+        for model in models:
+            model_name = model['name']
+            perf_score = performance_scores.get(model_name, 0)
+            resource_score = resource_scores.get(model_name, 0)
+            
+            weighted_score = (perf_score * 0.6) + (resource_score * 0.4)
+            weighted_scores[model_name] = weighted_score
+        
+        if not weighted_scores:
+            return None
+        
+        best_model_name = max(weighted_scores, key=weighted_scores.get)
+        
+        for model in models:
+            if model['name'] == best_model_name:
+                return {
+                    'name': model['name'],
+                    'display_name': model.get('display_name', model['name']),
+                    'model_type': model.get('model_type', ''),
+                    'weighted_score': weighted_scores[best_model_name],
+                    'performance_score': performance_scores.get(best_model_name, 0),
+                    'resource_score': resource_scores.get(best_model_name, 0)
+                }
+        
+        return None
+    
+    def validate_environment(self) -> Dict[str, Any]:
+        """Validate the environment for model operations.
+        
+        Returns:
+            Environment validation results
+        """
+        checks = {
+            'ollama_installed': self._check_ollama_available(),
+            'system_resources': self.get_system_resources(),
+            'requirements_check': self.check_system_requirements(),
+            'models_available': len(self.get_available_models()) > 0,
+            'health_status': self.health_check()['status']
+        }
+        
+        all_ok = (
+            checks['ollama_installed'] and
+            'error' not in checks['system_resources'] and
+            checks['requirements_check']['requirements_met'] and
+            checks['models_available'] and
+            checks['health_status'] in ['healthy', 'degraded']
+        )
+        
+        recommendations = []
+        if not checks['ollama_installed']:
+            recommendations.append("Install Ollama from https://ollama.ai/")
+        if 'error' in checks['system_resources']:
+            recommendations.append("Check system resources")
+        if not checks['requirements_check']['requirements_met']:
+            recommendations.append("Upgrade system to meet requirements")
+        if not checks['models_available']:
+            recommendations.append("Configure models in registry")
+        if checks['health_status'] == 'unhealthy':
+            recommendations.append("Run health check for details")
+        
+        recommendations = [rec for rec in recommendations if rec is not None]
+        
+        return {
+            'success': True,
+            'environment_ready': all_ok,
+            'checks': checks,
+            'timestamp': datetime.now().isoformat(),
+            'recommendations': recommendations
+        }
+
+
+def get_model_manager(config: Optional[Dict[str, Any]] = None) -> ModelManager:
     return ModelManager(config)
 
 
 if __name__ == "__main__":
-    """
-    Command-line test for model manager.
-    """
     import argparse
     
     parser = argparse.ArgumentParser(description="Test DocuBot Model Manager")
@@ -1663,12 +1703,13 @@ if __name__ == "__main__":
     parser.add_argument("--test-models", action="store_true", help="Test model listing")
     parser.add_argument("--test-download", type=str, help="Test model download")
     parser.add_argument("--test-validation", type=str, help="Test model validation")
+    parser.add_argument("--test-comparison", nargs='+', help="Test model comparison with given model names")
+    parser.add_argument("--test-environment", action="store_true", help="Test environment validation")
     parser.add_argument("--health-check", action="store_true", help="Run health check")
     parser.add_argument("--verbose", action="store_true", help="Verbose output")
     
     args = parser.parse_args()
     
-    # Configure logging
     log_level = logging.DEBUG if args.verbose else logging.INFO
     logging.basicConfig(
         level=log_level,
@@ -1681,12 +1722,10 @@ if __name__ == "__main__":
     print("=" * 80)
     
     try:
-        # Create manager
         print("\n1. Initializing ModelManager...")
         manager = ModelManager()
         print("   SUCCESS: ModelManager initialized")
         
-        # Test system resources
         if args.test_resources or args.test_all:
             print("\n2. Testing system resources...")
             resources = manager.get_system_resources()
@@ -1700,28 +1739,24 @@ if __name__ == "__main__":
                 print(f"   Disk Free (home): {resources['disk'].get(str(Path.home()), {}).get('free_gb', 0):.1f} GB")
                 print(f"   GPU Available: {resources['gpu']['available']}")
         
-        # Test model listing
         if args.test_models or args.test_all:
             print("\n3. Testing model listing...")
             
-            # LLM models
             llm_models = manager.get_available_models('llm')
             print(f"   LLM Models: {len(llm_models)} found")
             for model in llm_models[:3]:
-                print(f"   • {model['display_name']} ({model['name']})")
+                print(f"   * {model['display_name']} ({model['name']})")
             
             if len(llm_models) > 3:
                 print(f"   ... and {len(llm_models) - 3} more")
             
-            # Embedding models
             embedding_models = manager.get_available_models('embedding')
             print(f"   Embedding Models: {len(embedding_models)} found")
             for model in embedding_models:
-                status = "✓" if model.get('is_downloaded', False) else "○"
+                status = "YES" if model.get('is_downloaded', False) else "NO"
                 default = " [DEFAULT]" if model.get('is_default', False) else ""
                 print(f"   {status} {model['display_name']}{default} ({model['embedding_dimensions']}D)")
         
-        # Test model validation
         if args.test_validation or args.test_all:
             print("\n4. Testing model validation...")
             test_model = "all-MiniLM-L6-v2"
@@ -1734,19 +1769,49 @@ if __name__ == "__main__":
             if not validation['valid'] and 'issues' in validation:
                 print(f"   Issues: {', '.join(validation['issues'])}")
         
-        # Test model download (simulation only)
         if args.test_download:
             print(f"\n5. Testing model download for: {args.test_download}")
             print("   Note: This would actually download the model")
             print("   Use --test-download with caution")
             
-            # Just show validation
             validation = manager.validate_model_download(args.test_download)
             print(f"   Validation: {'PASS' if validation['valid'] else 'FAIL'}")
         
-        # Test file validation
+        if args.test_comparison:
+            print(f"\n6. Testing model comparison for: {args.test_comparison}")
+            comparison = manager.compare_models(args.test_comparison)
+            
+            if comparison.get('success', False):
+                print(f"   Comparison completed successfully")
+                print(f"   Models compared: {len(comparison['models'])}")
+                
+                if 'best_model' in comparison:
+                    best = comparison['best_model']
+                    print(f"   Recommended model: {best['display_name']} (Score: {best['weighted_score']:.1f})")
+                
+                if comparison['recommendations']:
+                    print("   Recommendations:")
+                    for rec in comparison['recommendations']:
+                        print(f"     * {rec}")
+            else:
+                print(f"   Comparison failed: {comparison.get('message', 'Unknown error')}")
+        
+        if args.test_environment or args.test_all:
+            print("\n7. Testing environment validation...")
+            env_validation = manager.validate_environment()
+            
+            print(f"   Environment ready: {env_validation['environment_ready']}")
+            print(f"   Ollama installed: {env_validation['checks']['ollama_installed']}")
+            print(f"   Models available: {env_validation['checks']['models_available']}")
+            print(f"   Health status: {env_validation['checks']['health_status']}")
+            
+            if env_validation['recommendations']:
+                print("   Recommendations:")
+                for rec in env_validation['recommendations']:
+                    print(f"     * {rec}")
+        
         if args.test_all:
-            print("\n6. Testing file validation...")
+            print("\n8. Testing file validation...")
             test_model = "all-MiniLM-L6-v2"
             file_validation = manager.validate_model_files(test_model, 'embedding')
             
@@ -1754,35 +1819,31 @@ if __name__ == "__main__":
             print(f"   Files valid: {file_validation['valid']}")
             print(f"   Message: {file_validation['message']}")
         
-        # Test health check
         if args.health_check or args.test_all:
-            print("\n7. Running health check...")
+            print("\n9. Running health check...")
             health = manager.health_check()
             
             if health['success']:
                 print(f"   Health status: {health['status'].upper()}")
                 print(f"   Health score: {health['health_score']}/100")
                 
-                if 'recommendations' in health and health['recommendations']:
-                    print(f"   Recommendations:")
+                if health['recommendations']:
+                    print("   Recommendations:")
                     for rec in health['recommendations']:
-                        print(f"     • {rec}")
+                        print(f"     * {rec}")
             else:
                 print(f"   Health check failed: {health.get('error', 'Unknown error')}")
         
-        # Test utility functions
         if args.test_all:
-            print("\n8. Testing utility functions...")
+            print("\n10. Testing utility functions...")
             test_sizes = [500, 1500, 1500000, 1500000000]
             for size in test_sizes:
                 formatted = manager.format_file_size(size)
                 print(f"   {size:,} bytes = {formatted}")
         
-        # Test active model management
         if args.test_all:
-            print("\n9. Testing active model management...")
+            print("\n11. Testing active model management...")
             
-            # Try to set default embedding model as active
             default_embedding = manager.registry.get_default_model('embedding')
             if default_embedding:
                 success = manager.set_active_model(default_embedding.name, 'embedding')

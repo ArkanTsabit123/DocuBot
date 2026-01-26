@@ -1,3 +1,5 @@
+# DocuBot/src/core/app.py
+
 """
 DocuBot Core Application Class
 Main query processing pipeline

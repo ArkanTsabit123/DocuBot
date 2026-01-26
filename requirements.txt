@@ -160,3 +160,5 @@ jupyterlab>=4.0.0,<5.0.0
 # ---------
 packaging>=23.2,<24.0.0
 platformdirs>=4.1.0,<5.0.0
+pytest-cov>=4.0.0
+pytest-mock>=3.0.0\npytesseract>=0.3.10

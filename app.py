@@ -194,16 +194,14 @@ class ApplicationLogger:
     
     def log_message(self, level: str, message: str, **kwargs):
         """Log a message with specified severity level."""
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = datetime.now().strftime("%Y-%m-d %H:%M:%S")
         log_message = f"{timestamp} - {level.upper()} - {message}"
         
         if kwargs:
             log_message += f" - {kwargs}"
         
-        # Console output
         print(log_message)
         
-        # File persistence
         try:
             with open(self.log_file, 'a', encoding='utf-8') as f:
                 f.write(log_message + "\n")
@@ -243,10 +241,8 @@ class DocuBotCore:
         try:
             self.logger.information("Initializing DocuBot Core engine...")
             
-            # Establish directory structure
             self.create_required_directories()
             
-            # Component initialization sequence
             component_initialization = [
                 ("database", self.initialize_database_system),
                 ("vector_store", self.initialize_vector_storage),
@@ -266,7 +262,6 @@ class DocuBotCore:
                     self.status.warnings.append(f"Component '{component_name}' initialization error: {str(e)}")
                     self.logger.error(f"Component '{component_name}' initialization failure: {e}")
             
-            # Calculate initialization metrics
             self.status.startup_time = time.time() - self.startup_time
             self.status.initialized = len(self.status.components_loaded) > 0
             
@@ -346,7 +341,6 @@ class DocuBotCore:
         self.logger.information("Initializing AI components...")
         ai_component_status = {"language_model": "unavailable", "embeddings": "unavailable"}
         
-        # Verify Ollama availability
         try:
             result = subprocess.run(["ollama", "--version"], capture_output=True, text=True, check=False)
             if result.returncode == 0:
@@ -355,7 +349,6 @@ class DocuBotCore:
         except (FileNotFoundError, subprocess.SubprocessError):
             self.logger.warning("Ollama not available - language model features disabled")
         
-        # Verify sentence transformers
         try:
             import sentence_transformers
             ai_component_status["embeddings"] = "available"
@@ -386,7 +379,6 @@ class DocuBotCore:
         self.logger.information(f"Document processing initiated: {file_path}")
         
         try:
-            # Document validation
             path = Path(file_path)
             if not path.exists():
                 return {
@@ -395,7 +387,6 @@ class DocuBotCore:
                     "file_path": file_path
                 }
             
-            # Format validation
             file_extension = path.suffix.lower()
             supported_formats = self.config.get("document_processing.supported_formats", [])
             
@@ -406,7 +397,6 @@ class DocuBotCore:
                     "file_path": file_path
                 }
             
-            # Document processing placeholder
             return {
                 "status": "success",
                 "message": "Document queued for processing",
@@ -444,7 +434,6 @@ class DocuBotCore:
         
         self.logger.information(f"Document query received: {question}")
         
-        # AI component availability check
         ai_status = self.components.get("artificial_intelligence", {})
         
         if ai_status.get("language_model") != "available":
@@ -455,7 +444,6 @@ class DocuBotCore:
                 "confidence": 0.0
             }
         
-        # Retrieval augmented generation placeholder
         return {
             "status": "success",
             "answer": f"Query response placeholder for: '{question}'\n\nAI question answering functionality requires completion of AI integration tasks.",
@@ -465,7 +453,7 @@ class DocuBotCore:
         }
     
     def get_application_status(self) -> Dict[str, Any]:
-        """Retrieve comprehensive application status."""
+        """Retrieve application status."""
         return {
             **self.status.to_dict(),
             "timestamp": datetime.now().isoformat(),
@@ -496,7 +484,6 @@ class DocuBotApplication:
         self.logger = None
         self.application_running = False
         
-        # Graceful shutdown signal handlers
         signal.signal(signal.SIGINT, self.handle_termination_signal)
         signal.signal(signal.SIGTERM, self.handle_termination_signal)
     
@@ -515,7 +502,6 @@ class DocuBotApplication:
             bool: Initialization success status
         """
         try:
-            # Initialize logging system
             self.logger = ApplicationLogger(
                 name="docubot",
                 log_dir=self.project_root / "data" / "logs",
@@ -524,7 +510,6 @@ class DocuBotApplication:
             self.logger.information("Initializing DocuBot application...")
             self.logger.information(f"Project root directory: {self.project_root}")
             
-            # Load application configuration
             self.logger.information("Loading application configuration...")
             self.configuration = ConfigurationManager()
             
@@ -535,14 +520,12 @@ class DocuBotApplication:
                     self.logger.error(f"Validation error: {error}")
                 return False
             
-            # Initialize core application engine
             self.logger.information("Initializing application core...")
             self.core = DocuBotCore(config=self.configuration, logger=self.logger)
             
             if not self.core.initialize():
                 self.logger.warning("Core initialization issues detected, continuing execution...")
             
-            # System requirements verification
             self.logger.information("Verifying system requirements...")
             system_verification = self.verify_system_requirements()
             
@@ -580,20 +563,17 @@ class DocuBotApplication:
         try:
             import psutil
             
-            # Python version verification
             python_version = sys.version_info
             if python_version.major < 3 or (python_version.major == 3 and python_version.minor < 11):
                 verification_result["critical_errors"].append(f"Python 3.11+ required, current version: {python_version.major}.{python_version.minor}")
                 verification_result["success"] = False
             
-            # Memory availability check
             system_memory = psutil.virtual_memory()
-            if system_memory.total < 8 * 1024**3:  # Minimum 8GB
+            if system_memory.total < 8 * 1024**3:
                 verification_result["warnings"].append(f"Insufficient memory: {system_memory.total // 1024**3}GB available, 8GB recommended")
             
-            # Disk space verification
             disk_usage = psutil.disk_usage(str(self.project_root))
-            if disk_usage.free < 5 * 1024**3:  # Minimum 5GB free
+            if disk_usage.free < 5 * 1024**3:
                 verification_result["warnings"].append(f"Insufficient disk space: {disk_usage.free // 1024**3}GB free, 5GB recommended")
             
         except ImportError:
@@ -617,7 +597,6 @@ class DocuBotApplication:
             print("DocuBot Command Line Interface")
             print("="*60)
             
-            # Display application status
             application_status = self.core.get_application_status()
             print(f"\nApplication Status:")
             print(f"  Initialization: {application_status['initialized']}")
@@ -629,7 +608,6 @@ class DocuBotApplication:
                 for warning in application_status['warnings']:
                     print(f"  Warning: {warning}")
             
-            # Command interface
             print("\nAvailable Commands:")
             print("  1. Process Document")
             print("  2. Query Documents")
@@ -691,29 +669,58 @@ class DocuBotApplication:
         self.logger.information("Initializing desktop interface...")
         
         try:
-            # Desktop interface dependencies
             try:
                 import customtkinter as ctk
-            except ImportError:
-                self.logger.error("CustomTkinter unavailable")
-                print("CustomTkinter required for desktop interface.")
-                print("Installation command: pip install customtkinter")
+                self.logger.information(f"CustomTkinter imported successfully, version: {ctk.__version__}")
+            except ImportError as e:
+                self.logger.error(f"CustomTkinter import failed: {e}")
+                
+                import sys
+                import os
+                import site
+                
+                self.logger.error(f"Python executable: {sys.executable}")
+                self.logger.error(f"Python version: {sys.version}")
+                self.logger.error(f"Current working directory: {os.getcwd()}")
+                
+                self.logger.error(f"Site packages paths:")
+                for path in site.getsitepackages():
+                    self.logger.error(f"  - {path}")
+                
+                import pkgutil
+                self.logger.error("Searching for customtkinter in sys.path...")
+                found = False
+                for finder, name, ispkg in pkgutil.iter_modules():
+                    if name == 'customtkinter':
+                        self.logger.error(f"Found customtkinter via {finder}")
+                        found = True
+                
+                if not found:
+                    self.logger.error("CustomTkinter not found in any module path")
+                
+                print("\n" + "="*60)
+                print("CUSTOMTKINTER IMPORT ERROR - DEBUG INFO")
+                print("="*60)
+                print(f"Python: {sys.executable}")
+                print(f"Error: {e}")
+                print("\nPossible solutions:")
+                print("1. Restart VSCode and select correct interpreter (Ctrl+Shift+P > Python: Select Interpreter)")
+                print("2. Run in terminal: pip install --force-reinstall customtkinter==5.2.2")
+                print("3. Or try CLI mode: python app.py cli")
+                print("="*60)
+                
                 return 1
-            
-            # Interface configuration
+                
             ctk.set_appearance_mode("dark")
             ctk.set_default_color_theme("blue")
             
-            # Primary application window
             primary_window = ctk.CTk()
             primary_window.title("DocuBot - Local AI Assistant")
             primary_window.geometry("1200x800")
             
-            # Main interface container
             main_container = ctk.CTkFrame(primary_window)
             main_container.pack(fill="both", expand=True, padx=10, pady=10)
             
-            # Application header
             application_header = ctk.CTkLabel(
                 main_container,
                 text="DocuBot - Local AI Assistant",
@@ -721,7 +728,6 @@ class DocuBotApplication:
             )
             application_header.pack(pady=20)
             
-            # Status display
             status_container = ctk.CTkFrame(main_container)
             status_container.pack(fill="x", padx=20, pady=10)
             
@@ -730,7 +736,6 @@ class DocuBotApplication:
             status_indicator = ctk.CTkLabel(status_container, text=status_display, font=("Arial", 14))
             status_indicator.pack(pady=10)
             
-            # Component information
             component_container = ctk.CTkFrame(main_container)
             component_container.pack(fill="x", padx=20, pady=10)
             
@@ -741,7 +746,6 @@ class DocuBotApplication:
                 component_display = ctk.CTkLabel(component_container, text=f"• {component}")
                 component_display.pack(anchor="w", padx=30, pady=2)
             
-            # Warning display
             if application_status.get('warnings'):
                 warning_container = ctk.CTkFrame(main_container, fg_color="#FFA500")
                 warning_container.pack(fill="x", padx=20, pady=10)
@@ -753,11 +757,9 @@ class DocuBotApplication:
                     warning_display = ctk.CTkLabel(warning_container, text=f"Warning: {warning}")
                     warning_display.pack(anchor="w", padx=30, pady=2)
             
-            # Function controls
             control_container = ctk.CTkFrame(main_container)
             control_container.pack(pady=30)
             
-            # Document processing control
             def initiate_document_processing():
                 from tkinter import filedialog
                 selected_file = filedialog.askopenfilename(
@@ -776,7 +778,6 @@ class DocuBotApplication:
                     processing_result = self.core.process_document(selected_file)
                     print(f"Document processing result: {processing_result}")
             
-            # Document interface control
             def initiate_document_interface():
                 interface_window = ctk.CTkToplevel(primary_window)
                 interface_window.title("DocuBot Document Interface")
@@ -812,7 +813,6 @@ class DocuBotApplication:
                 submit_button = ctk.CTkButton(input_container, text="Submit", command=submit_query)
                 submit_button.pack(side="right")
             
-            # Control buttons
             document_button = ctk.CTkButton(
                 control_container,
                 text="Process Document",
@@ -831,7 +831,6 @@ class DocuBotApplication:
             )
             query_button.pack(pady=10)
             
-            # Application termination
             def terminate_application():
                 self.shutdown()
                 primary_window.quit()
@@ -846,7 +845,6 @@ class DocuBotApplication:
             )
             termination_button.pack(pady=10)
             
-            # Application footer
             footer_text = f"Version {application_status['configuration']['version']} | Active Components: {len(application_status['components_loaded'])}/4"
             application_footer = ctk.CTkLabel(
                 main_container,
@@ -855,7 +853,6 @@ class DocuBotApplication:
             )
             application_footer.pack(side="bottom", pady=10)
             
-            # Main event loop
             self.logger.information("Starting desktop interface event loop...")
             self.application_running = True
             primary_window.mainloop()
@@ -878,7 +875,6 @@ class DocuBotApplication:
         self.logger.information("Initializing web interface...")
         
         try:
-            # Web interface dependency verification
             try:
                 import streamlit
             except ImportError:
@@ -887,7 +883,6 @@ class DocuBotApplication:
                 print("Installation command: pip install streamlit")
                 return 1
             
-            # Web application launch
             web_application_path = self.project_root / "src" / "ui" / "web" / "streamlit_app.py"
             if web_application_path.exists():
                 self.logger.information("Launching Streamlit web interface...")
@@ -914,13 +909,11 @@ class DocuBotApplication:
             int: Exit status code
         """
         try:
-            # Application initialization
             if not self.initialize():
                 return 1
             
             self.logger.information(f"Starting DocuBot in {execution_mode} mode")
             
-            # Mode-specific execution
             if execution_mode == "cli":
                 return self.execute_command_line_interface()
             elif execution_mode == "web":
@@ -954,7 +947,6 @@ class DocuBotApplication:
             self.logger.information("Initiating application termination...")
         
         try:
-            # Core component termination
             if self.core:
                 self.core.shutdown()
             
@@ -1057,13 +1049,10 @@ Usage Examples:
     
     parsed_arguments = argument_parser.parse_args()
     
-    # Application instantiation and execution
     application_instance = DocuBotApplication()
     
-    # Execute application with specified mode
     exit_status = application_instance.execute(parsed_arguments.mode)
     
-    # Application termination
     sys.exit(exit_status)
 
 

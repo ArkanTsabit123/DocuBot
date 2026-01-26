@@ -1,3 +1,5 @@
+# docubase/tests/conftest.py
+
 """
 Pytest configuration and fixtures
 """

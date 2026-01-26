@@ -1,4 +1,5 @@
-# File: src/ai_engine/__init__.py
+# docubot/src/ai_engine/__init__.py
+
 """
 AI Engine module for DocuBot.
 """
@@ -14,8 +15,7 @@ from .tagging import Tagger
 __all__ = [
     'EmbeddingService',
     'get_embedding_service',
-    'create_embedding_service',  # <-- INI YANG BENAR
-    'LLMClient',
+    'create_embedding_service',  
     'create_llm_client',
     'get_global_llm_client',
     'ModelManager',
