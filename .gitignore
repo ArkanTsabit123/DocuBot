@@ -78,7 +78,7 @@ venv.bak/
 *fix*.py
 *.debug.py
 *.test.py
-
+*test_*.pyc
 
 # Progress tracking files
 .docubot_progress.json
@@ -92,6 +92,8 @@ smart_validation_report.json
 *requirements_analysis*.json
 *dependency_report*.json
 *task_details*.json
+*_report_*.json
+*_report_*.txt
 
 
 # ============================================
@@ -272,3 +274,28 @@ poetry.lock
 !app.py
 !install_docubot.py
 !check_server.py
+
+# Python compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Database migrations (generated)
+alembic.ini
+alembic/
+validation_reports/
+
+# Python compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Database migrations (generated)
+alembic.ini
+alembic/
+src/database/migrations/
+validation_reports/

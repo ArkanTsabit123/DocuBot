@@ -1,10 +1,12 @@
+# docubot/src/database/models.py
+
 """
 SQLAlchemy ORM Models for DocuBot Database
 """
 
 from datetime import datetime
-from typing import List, Optional, Dict, Any
-from sqlalchemy import create_engine, Column, Integer, String, Text, Boolean, DateTime, ForeignKey
+from typing import Dict, Any
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship, sessionmaker, Session
 from sqlalchemy import JSON
@@ -208,18 +210,55 @@ class Setting(Base):
         }
 
 
+class Tag(Base):
+    """Tag model for document and conversation organization"""
+    
+    __tablename__ = 'tags'
+    
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String(100), nullable=False, unique=True)
+    color = Column(String(20))
+    description = Column(Text)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    usage_count = Column(Integer, default=0)
+    
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert model to dictionary"""
+        return {
+            'id': self.id,
+            'name': self.name,
+            'color': self.color,
+            'description': self.description,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'usage_count': self.usage_count
+        }
+
+
+class DocumentTag(Base):
+    """Junction table for document-tag many-to-many relationship"""
+    
+    __tablename__ = 'document_tags'
+    
+    document_id = Column(String(36), ForeignKey('documents.id', ondelete='CASCADE'), primary_key=True)
+    tag_id = Column(String(36), ForeignKey('tags.id', ondelete='CASCADE'), primary_key=True)
+    added_at = Column(DateTime, default=datetime.utcnow)
+
+
 _engine = None
 _SessionLocal = None
+
 
 def get_engine():
     """Get SQLAlchemy engine"""
     global _engine
     
     if _engine is None:
+        from sqlalchemy import create_engine
         db_url = f"sqlite:///{DATABASE_DIR / DATABASE_NAME}"
         _engine = create_engine(db_url, connect_args={"check_same_thread": False})
     
     return _engine
+
 
 def get_session_local():
     """Get session factory"""
@@ -230,15 +269,18 @@ def get_session_local():
     
     return _SessionLocal
 
+
 def get_session() -> Session:
     """Get database session"""
     SessionLocal = get_session_local()
     return SessionLocal()
 
+
 def create_tables():
     """Create all database tables"""
     engine = get_engine()
     Base.metadata.create_all(bind=engine)
+
 
 def init_database():
     """Initialize database with tables"""

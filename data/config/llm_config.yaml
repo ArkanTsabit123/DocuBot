@@ -1,261 +1,329 @@
-#docubot/data/config/llm_config.yaml
+# DocuBot LLM Configuration
+# Dedicated configuration file for Language Model settings
+# Version: 1.0.0
 
-# LLM Configuration
-llm_models:
-  default:
-    name: "llama2:7b"
-    provider: "ollama"
-    parameters:
-      temperature: 0.1
-      top_p: 0.9
-      max_tokens: 1024
-    requirements:
-      ram: "8GB minimum"
-      storage: "4.2GB"
-      download_size: "3.8GB"
+# Supported LLM Providers
+providers:
+  - name: "ollama"
+    enabled: true
+    priority: 1
+    api_endpoint: "http://localhost:11434"
+    timeout_seconds: 300
+    api_key: ""
+    
+  - name: "openai"
+    enabled: false
+    priority: 2
+    api_endpoint: "https://api.openai.com/v1"
+    api_key: ""
+    organization: ""
+    
+  - name: "huggingface"
+    enabled: false
+    priority: 3
+    api_endpoint: "https://api-inference.huggingface.co/models"
+    api_key: ""
+    
+  - name: "local"
+    enabled: false
+    priority: 4
+    model_path: "${models_dir}/local"
+    use_gpu: false
+    gpu_layers: 0
+
+# Available Models Configuration
+models:
+  # Default model (must be available)
+  default: "llama2:7b"
   
-  fast:
-    name: "mistral:7b"
-    provider: "ollama"
-    parameters:
+  # Model configurations
+  configurations:
+    - name: "llama2:7b"
+      provider: "ollama"
+      display_name: "Llama 2 7B"
+      description: "7 billion parameter Llama 2 model from Meta"
+      context_size: 4096
+      parameter_count: 7000000000
+      license: "Llama 2 Community License"
+      
+      # Performance characteristics
+      tokens_per_second: 30
+      memory_usage_mb: 4000
+      disk_size_gb: 4.2
+      quantization: "Q4_0"
+      
+      # Generation parameters
+      temperature: 0.7
+      top_p: 0.9
+      top_k: 40
+      repeat_penalty: 1.1
+      
+      # System requirements
+      min_ram_gb: 8
+      recommended_ram_gb: 16
+      supports_gpu: true
+      recommended_vram_gb: 6
+      
+    - name: "mistral:7b"
+      provider: "ollama"
+      display_name: "Mistral 7B"
+      description: "7 billion parameter Mistral model with 8K context"
+      context_size: 8192
+      parameter_count: 7300000000
+      license: "Apache 2.0"
+      
+      # Performance characteristics
+      tokens_per_second: 35
+      memory_usage_mb: 4500
+      disk_size_gb: 4.1
+      quantization: "Q4_0"
+      
+      # Generation parameters
+      temperature: 0.7
+      top_p: 0.95
+      top_k: 50
+      repeat_penalty: 1.0
+      
+      # System requirements
+      min_ram_gb: 8
+      recommended_ram_gb: 16
+      supports_gpu: true
+      recommended_vram_gb: 6
+      
+    - name: "neural-chat:7b"
+      provider: "ollama"
+      display_name: "Neural Chat 7B"
+      description: "Fine-tuned Llama 2 for conversation"
+      context_size: 4096
+      parameter_count: 7000000000
+      license: "Llama 2 Community License"
+      
+      # Performance characteristics
+      tokens_per_second: 25
+      memory_usage_mb: 4200
+      disk_size_gb: 4.3
+      quantization: "Q4_0"
+      
+      # Generation parameters
+      temperature: 0.5
+      top_p: 0.9
+      top_k: 40
+      repeat_penalty: 1.2
+      
+      # System requirements
+      min_ram_gb: 8
+      recommended_ram_gb: 16
+      supports_gpu: true
+      recommended_vram_gb: 6
+      
+    - name: "codellama:7b"
+      provider: "ollama"
+      display_name: "Code Llama 7B"
+      description: "Llama 2 fine-tuned for coding tasks"
+      context_size: 16384
+      parameter_count: 7000000000
+      license: "Llama 2 Community License"
+      
+      # Performance characteristics
+      tokens_per_second: 20
+      memory_usage_mb: 5000
+      disk_size_gb: 4.5
+      quantization: "Q4_0"
+      
+      # Generation parameters
       temperature: 0.2
       top_p: 0.95
-      max_tokens: 2048
-    requirements:
-      ram: "8GB"
-      storage: "4.1GB"
-  
-  accurate:
-    name: "neural-chat:7b"
-    provider: "ollama"
-    parameters:
-      temperature: 0.05
-      top_p: 0.9
-      max_tokens: 1024
-    requirements:
-      ram: "8GB"
-      storage: "4.3GB"
+      top_k: 10
+      repeat_penalty: 1.1
+      
+      # System requirements
+      min_ram_gb: 12
+      recommended_ram_gb: 24
+      supports_gpu: true
+      recommended_vram_gb: 8
 
-# Ollama server settings
-
-ollama:
-  host: "http://localhost:11434"
-  timeout: 120
-  verify_ssl: false
-
-# Default model settings
-default_model: "llama2:7b"
-fallback_model: "mistral:7b"
-
-# Default generation parameters 
-default_parameters:
-  temperature: 0.1
-  top_p: 0.9
-  top_k: 40
-  num_predict: 1024
-  repeat_penalty: 1.1
-  seed: 42
-  num_ctx: 4096
-
-# Generation settings
+# Default Generation Parameters
 generation:
-  max_retries: 3
-  retry_delay: 2
-  timeout: 300
-  streaming_chunk_size: 100
+  # Temperature controls randomness
+  temperature: 0.7
+  min_temperature: 0.0
+  max_temperature: 2.0
+  
+  # Top-p nucleus sampling
+  top_p: 0.9
+  min_top_p: 0.1
+  max_top_p: 1.0
+  
+  # Top-k sampling
+  top_k: 40
+  min_top_k: 1
+  max_top_k: 100
+  
+  # Repetition penalty
+  repetition_penalty: 1.1
+  min_repetition_penalty: 1.0
+  max_repetition_penalty: 2.0
+  
+  # Frequency and presence penalties
+  frequency_penalty: 0.0
+  presence_penalty: 0.0
+  
+  # Token limits
+  max_tokens: 2048
+  min_tokens: 1
+  max_context_tokens: 4096
+  
+  # Streaming
+  stream: true
+  stream_chunk_size: 20
 
-# Model configurations 
-model_configs:
-  llama2:7b:
-    display_name: "Llama 2 7B"
-    description: "Meta Llama 2 7B parameter model - Good balance of speed and quality"
-    context_window: 4096
-    parameters:
-      temperature: 0.1
-      top_p: 0.9
-      top_k: 40
-      num_predict: 1024
-    requirements:
-      ram: "8GB minimum"
-      storage: "4.2GB"
-      download_size: "3.8GB"
-      vram: "Optional, 4GB+ for acceleration"
+# Prompt Templates
+prompts:
+  # System prompts
+  system:
+    default: "You are DocuBot, a helpful AI assistant that answers questions based on the provided documents. Always cite your sources when referencing document content."
+    
+    concise: "You are a concise assistant. Answer questions directly and briefly."
+    
+    detailed: "You are a detailed assistant. Provide answers with explanations."
+    
+    creative: "You are a creative assistant. Provide imaginative and engaging responses."
   
-  mistral:7b:
-    display_name: "Mistral 7B"
-    description: "Mistral AI 7B parameter model - Fast and efficient"
-    context_window: 8192
-    parameters:
-      temperature: 0.2
-      top_p: 0.95
-      top_k: 50
-      num_predict: 2048
-    requirements:
-      ram: "8GB"
-      storage: "4.1GB"
-      download_size: "4.1GB"
+  # User prompt templates
+  user:
+    rag_template: |
+      Context: {context}
+      
+      Question: {question}
+      
+      Answer based on the provided context. If the context doesn't contain relevant information, say so. Always cite sources when available.
+      
+    simple_template: "Question: {question}\n\nAnswer:"
+    
+    chat_template: |
+      Conversation history:
+      {history}
+      
+      Current question: {question}
+      
+      Answer:
+    
+    summarization_template: "Summarize the following text:\n\n{text}\n\nSummary:"
   
-  neural-chat:7b:
-    display_name: "Neural Chat 7B"
-    description: "Intel Neural Chat 7B parameter model - High accuracy for conversations"
-    context_window: 4096
-    parameters:
-      temperature: 0.05
-      top_p: 0.9
-      top_k: 40
-      num_predict: 1024
-    requirements:
-      ram: "8GB"
-      storage: "4.3GB"
-      download_size: "4.3GB"
-  
-  # Additional models from your file
-  llama2:13b:
-    display_name: "Llama 2 13B"
-    description: "Meta Llama 2 13B parameter model - Higher quality, requires more RAM"
-    context_window: 4096
-    parameters:
-      temperature: 0.1
-      top_p: 0.9
-      top_k: 40
-      num_predict: 1024
-    requirements:
-      ram: "16GB"
-      storage: "7.8GB"
-      download_size: "7.8GB"
-  
-  codellama:7b:
-    display_name: "Code Llama 7B"
-    description: "Code generation model based on Llama 2 - Specialized for programming"
-    context_window: 16384
-    parameters:
-      temperature: 0.1
-      top_p: 0.95
-      top_k: 50
-      num_predict: 2048
-    requirements:
-      ram: "8GB"
-      storage: "3.8GB"
-      download_size: "3.8GB"
-  
-  # Add models from my file for compatibility
-  llama3:8b:
-    display_name: "Llama 3 8B"
-    description: "Meta Llama 3 8B parameter model - Latest generation, improved reasoning"
-    context_window: 8192
-    parameters:
-      temperature: 0.1
-      top_p: 0.9
-      num_predict: 2048
-    requirements:
-      ram: "16GB recommended"
-      storage: "5.0GB"
-  
-  mixtral:8x7b:
-    display_name: "Mixtral 8x7B"
-    description: "Mixture of Experts model - High quality but resource intensive"
-    context_window: 32768
-    parameters:
-      temperature: 0.1
-      top_p: 0.9
-      num_predict: 4096
-    requirements:
-      ram: "32GB+ recommended"
-      storage: "25GB"
+  # Assistant prompt templates
+  assistant:
+    citation_format: "[Source: {source}, Page: {page}]"
+    
+    unknown_answer: "I couldn't find relevant information in the provided documents to answer this question."
+    
+    processing: "Processing your query..."
 
-# System prompt templates
-system_prompts:
-  default: |
-    You are DocuBot, a helpful AI assistant that answers questions based on the provided documents.
-    You should provide accurate, concise, and helpful answers. If you don't know something based on the documents,
-    say so rather than making up information.
-    
-    Guidelines:
-    1. Base your answers only on the provided document context
-    2. Be concise but thorough
-    3. Cite specific parts of documents when relevant
-    4. If the answer isn't in the documents, say so clearly
-    5. Format responses clearly with paragraphs and bullet points when helpful
-    
-  concise: |
-    You are DocuBot. Provide concise answers based on the documents.
-    Keep responses brief and to the point.
-    
-  detailed: |
-    You are DocuBot. Provide detailed, comprehensive answers based on the documents.
-    Include explanations, context, and examples where helpful.
-    Structure your response with clear sections if appropriate.
-    
-  code: |
-    You are DocuBot, specialized in code analysis and programming questions.
-    Provide code examples, explanations, and best practices based on the provided documentation.
-    Format code properly with appropriate syntax highlighting indications.
-    
-  research: |
-    You are DocuBot, assisting with research and academic documents.
-    Provide analytical answers, compare different sources, and highlight key findings.
-    Include citations to specific document sections.
+# Model Management
+management:
+  # Download settings
+  auto_download_models: false
+  download_verify_checksums: true
+  download_timeout_minutes: 60
+  resume_downloads: true
+  
+  # Update settings
+  check_for_model_updates: false
+  auto_update_models: false
+  update_frequency_days: 7
+  
+  # Cache settings
+  cache_downloaded_models: true
+  cache_location: "${models_dir}/cache"
+  max_cache_size_gb: 20
+  
+  # Cleanup settings
+  remove_unused_models: false
+  keep_minimum_models: 1
+  cleanup_interval_days: 30
 
-# Response formatting 
-formatting:
-  include_sources: true
-  max_source_count: 5
-  citation_format: "markdown"
-  trim_responses: true
-  max_response_length: 5000
-  enable_markdown: true
-
-# Model management settings
-model_management:
-  auto_check_updates: true
-  update_check_interval_hours: 24
-  auto_download_popular: false
-  cache_models: true
-  cleanup_old_models_days: 30
-
-# Performance settings
+# Performance Optimization
 performance:
-  enable_caching: true
-  cache_size_mb: 500
-  batch_size: 32
-  max_concurrent_requests: 4
-
-# Advanced settings
-advanced:
-  custom_modelfiles: []
-  experimental_features: false
-  debug_logging: false
-  custom_parameters: {}
-
-# Model selection strategy 
-model_selection:
-  strategy: "auto"  
-  auto_select_criteria:
-    - "available_ram"
-    - "task_complexity"
-    - "response_time"
+  # Caching
+  cache_generated_responses: true
+  cache_ttl_minutes: 60
+  max_cache_size_mb: 1000
   
+  # Batching
+  batch_requests: false
+  max_batch_size: 8
+  batch_timeout_ms: 100
+  
+  # Parallelism
+  parallel_generations: false
+  max_parallel_requests: 2
+  thread_pool_size: 4
+  
+  # Memory management
+  unload_inactive_models: true
+  inactive_timeout_minutes: 30
+  max_loaded_models: 1
+
+# Monitoring and Logging
+monitoring:
+  # Request logging
+  log_all_requests: false
+  log_request_details: false
+  anonymize_logs: true
+  
+  # Performance metrics
+  track_response_times: true
+  track_token_usage: true
+  track_model_loading: true
+  
+  # Error tracking
+  log_errors: true
+  log_warnings: true
+  error_reporting: false
+  
+  # Analytics
+  collect_usage_stats: false
+  anonymize_statistics: true
+  statistics_retention_days: 30
+
+# Fallback and Error Handling
+fallback:
+  # Model fallback chain
   fallback_chain:
-    - "llama3:8b"
     - "llama2:7b"
     - "mistral:7b"
     - "neural-chat:7b"
-
-# Prompt templates for RAG workflow
-rag_prompts:
-  query_template: |
-    Context from documents:
-    {context}
-    
-    User question: {question}
-    
-    Based on the provided context, please answer the user's question.
-    If the context doesn't contain relevant information, say so.
-    Always cite which document(s) you got information from.
   
-  summarization_template: |
-    Document content:
-    {document_content}
-    
-    Please provide a concise summary of this document.
-    Include key points, main arguments, and important findings.
+  # Provider fallback
+  provider_fallback: true
+  fallback_timeout_seconds: 10
+  
+  # Error handling
+  retry_on_failure: true
+  max_retries: 3
+  retry_delay_seconds: 2
+  
+  # Graceful degradation
+  use_simpler_model_on_error: true
+  reduce_context_on_oom: true
+  fallback_to_keyword_search: true
+
+# Quality Control
+quality:
+  # Response validation
+  validate_responses: true
+  check_for_hallucinations: true
+  verify_citations: true
+  
+  # Content filtering
+  filter_inappropriate_content: true
+  profanity_filter: true
+  bias_detection: false
+  
+  # Quality metrics
+  minimum_confidence_score: 0.5
+  require_citations_for_facts: true
+  flag_low_confidence_responses: true
+  
+  # Improvement
+  collect_feedback: false
+  use_feedback_for_improvement: false
