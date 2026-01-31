@@ -1,447 +1,449 @@
 # docubot/scripts/download_models.py
 
 """
-Model download and management script for DocuBot.
-Handles acquisition and validation of language and embedding models.
+DocuBot - Model Download CLI Tool
+
+Command-line interface for downloading AI models with progress tracking,
+batch operations, and comprehensive error handling.
 """
 
-import os
 import sys
-import subprocess
+import os
+import argparse
 import json
 import time
-import hashlib
+import concurrent.futures
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
-import argparse
+from typing import List, Optional, Dict, Any
+from datetime import datetime
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+from ai_engine.model_manager import (
+    ModelManager,
+    DownloadStatus,
+    DownloadProgress,
+    ModelManagerError,
+    NetworkError,
+    DiskSpaceError
+)
 
 
-def check_ollama_installed() -> Tuple[bool, str]:
-    """Verify Ollama installation status."""
-    try:
-        result = subprocess.run(
-            ['ollama', '--version'],
-            capture_output=True,
-            text=True,
-            timeout=5
+class DownloadCLI:
+    """Command-line interface for model downloads."""
+    
+    def __init__(self):
+        self.manager = ModelManager()
+        self.running = True
+        
+    def parse_arguments(self) -> argparse.Namespace:
+        """Parse command-line arguments."""
+        parser = argparse.ArgumentParser(
+            description="DocuBot Model Download Tool",
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            epilog="""
+Examples:
+  %(prog)s --model llama2:7b
+  %(prog)s --all
+  %(prog)s --list
+  %(prog)s --model mistral:7b --force
+  %(prog)s --model llama2:7b --model mistral:7b
+            """
         )
         
-        if result.returncode == 0:
-            return True, f"Ollama version: {result.stdout.strip()}"
-        else:
-            return False, f"Ollama verification failed: {result.stderr}"
-            
-    except FileNotFoundError:
-        return False, "Ollama not found. Install from https://ollama.ai/"
-    except subprocess.TimeoutExpired:
-        return False, "Ollama verification timeout"
-    except Exception as error:
-        return False, f"Ollama verification error: {error}"
-
-
-def download_ollama_model(model_name: str, verbose: bool = False) -> Tuple[bool, str]:
-    """Acquire specified Ollama model."""
-    if verbose:
-        print(f"Initiating Ollama model download: {model_name}")
-    
-    try:
-        process = subprocess.Popen(
-            ['ollama', 'pull', model_name],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
+        parser.add_argument(
+            "--model", "-m",
+            action="append",
+            help="Model name to download (can be specified multiple times)"
         )
         
-        if verbose:
-            for line in iter(process.stdout.readline, ''):
-                print(f"  {line.strip()}")
+        parser.add_argument(
+            "--all",
+            action="store_true",
+            help="Download all available models"
+        )
         
-        process.wait()
+        parser.add_argument(
+            "--list", "-l",
+            action="store_true",
+            help="List available models"
+        )
         
-        if process.returncode == 0:
-            return True, f"Model acquired successfully: {model_name}"
-        else:
-            error_output = process.stderr.read()
-            return False, f"Model acquisition failed for {model_name}: {error_output}"
-            
-    except FileNotFoundError:
-        return False, "Ollama executable not found"
-    except Exception as error:
-        return False, f"Download error for {model_name}: {error}"
-
-
-def download_ollama_model_binary(model_name: str, verbose: bool = False) -> Tuple[bool, str]:
-    """Alternative download method using binary protocol for Ollama models."""
-    if verbose:
-        print(f"Starting binary protocol download for: {model_name}")
+        parser.add_argument(
+            "--force",
+            action="store_true",
+            help="Force re-download of existing models"
+        )
+        
+        parser.add_argument(
+            "--output", "-o",
+            type=Path,
+            help="Output directory for downloaded models"
+        )
+        
+        parser.add_argument(
+            "--concurrent", "-c",
+            type=int,
+            default=1,
+            help="Number of concurrent downloads (default: 1)"
+        )
+        
+        parser.add_argument(
+            "--timeout",
+            type=int,
+            default=3600,
+            help="Download timeout in seconds (default: 3600)"
+        )
+        
+        parser.add_argument(
+            "--json",
+            action="store_true",
+            help="Output results in JSON format"
+        )
+        
+        parser.add_argument(
+            "--quiet", "-q",
+            action="store_true",
+            help="Suppress progress output"
+        )
+        
+        parser.add_argument(
+            "--validate",
+            action="store_true",
+            help="Validate downloaded models"
+        )
+        
+        return parser.parse_args()
     
-    try:
-        command = ['ollama', 'pull', model_name]
-        
-        if verbose:
-            process = subprocess.run(
-                command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                text=True,
-                timeout=1200
-            )
+    def show_progress_bar(self, progress: DownloadProgress, width: int = 40):
+        """Display a progress bar for download progress."""
+        if progress.total_bytes:
+            percentage = progress.progress_percentage
+            filled = int(width * percentage / 100)
+            bar = "█" * filled + "░" * (width - filled)
             
-            for line in process.stdout.splitlines():
-                if 'downloading' in line.lower() or 'complete' in line.lower():
-                    print(f"  {line.strip()}")
-        else:
-            process = subprocess.run(
-                command,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.PIPE,
-                timeout=1200
-            )
-        
-        if process.returncode == 0:
-            return True, f"Binary download completed for {model_name}"
-        else:
-            error_msg = process.stderr if hasattr(process, 'stderr') else "Unknown error"
-            return False, f"Binary download failed: {error_msg}"
+            downloaded_mb = progress.downloaded_bytes / (1024 ** 2)
+            total_mb = progress.total_bytes / (1024 ** 2)
             
-    except subprocess.TimeoutExpired:
-        return False, f"Download timeout for {model_name} (20 minutes)"
-    except Exception as error:
-        return False, f"Binary download exception: {error}"
-
-
-def check_sentence_transformers_installed() -> Tuple[bool, str]:
-    """Verify sentence-transformers package availability."""
-    try:
-        import importlib.util
-        
-        if importlib.util.find_spec('sentence_transformers'):
-            return True, "sentence-transformers package available"
-        else:
-            return False, "sentence-transformers package not found"
-            
-    except ImportError:
-        return False, "sentence-transformers not installed"
-    except Exception as error:
-        return False, f"sentence-transformers verification error: {error}"
-
-
-def download_sentence_transformer_model(model_name: str) -> Tuple[bool, str]:
-    """Download and load sentence-transformer model."""
-    try:
-        from sentence_transformers import SentenceTransformer
-        
-        print(f"Acquiring sentence-transformer model: {model_name}")
-        
-        start_time = time.time()
-        model = SentenceTransformer(model_name)
-        elapsed_time = time.time() - start_time
-        
-        if model:
-            return True, f"Model loaded successfully in {elapsed_time:.1f} seconds"
-        else:
-            return False, f"Model loading failed: {model_name}"
-            
-    except ImportError:
-        return False, "Install required: pip install sentence-transformers"
-    except Exception as error:
-        return False, f"Model acquisition error: {error}"
-
-
-def verify_model_download(model_type: str, model_name: str) -> Tuple[bool, str]:
-    """Validate successful model acquisition."""
-    if model_type == 'llm':
-        try:
-            result = subprocess.run(
-                ['ollama', 'list'],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            
-            if result.returncode == 0:
-                if model_name in result.stdout:
-                    return True, f"Model present in Ollama registry: {model_name}"
+            if progress.speed_bytes_per_sec > 0:
+                speed_mb = progress.speed_bytes_per_sec / (1024 ** 2)
+                if progress.estimated_seconds_remaining:
+                    remaining = self._format_time(progress.estimated_seconds_remaining)
+                    speed_info = f"{speed_mb:.1f}MB/s, {remaining} remaining"
                 else:
-                    return False, f"Model missing from Ollama registry: {model_name}"
+                    speed_info = f"{speed_mb:.1f}MB/s"
             else:
-                return False, f"Ollama registry query failed: {result.stderr}"
-                
-        except Exception as error:
-            return False, f"LLM verification error: {error}"
-    
-    elif model_type == 'embedding':
-        try:
-            from sentence_transformers import SentenceTransformer
+                speed_info = "calculating..."
             
-            try:
-                SentenceTransformer(model_name)
-                return True, f"Embedding model validated: {model_name}"
-            except Exception as error:
-                return False, f"Embedding model validation failed: {error}"
-                
-        except ImportError:
-            return False, "sentence-transformers package unavailable"
-    
-    return False, f"Unsupported model type: {model_type}"
-
-
-def load_model_config(config_path: Optional[Path] = None) -> Dict:
-    """Load model configuration from specified file."""
-    default_configuration = {
-        'llm_models': [
-            {'name': 'llama2:7b', 'display_name': 'Llama 2 7B'},
-            {'name': 'mistral:7b', 'display_name': 'Mistral 7B'},
-            {'name': 'neural-chat:7b', 'display_name': 'Neural Chat 7B'}
-        ],
-        'embedding_models': [
-            {'name': 'all-MiniLM-L6-v2', 'display_name': 'MiniLM L6 v2'},
-            {'name': 'all-mpnet-base-v2', 'display_name': 'MPNet Base v2'}
-        ]
-    }
-    
-    if config_path and config_path.exists():
-        try:
-            with open(config_path, 'r') as config_file:
-                import yaml
-                user_configuration = yaml.safe_load(config_file)
-                
-                if user_configuration:
-                    default_configuration.update(user_configuration)
-                    
-        except Exception as error:
-            print(f"Configuration file load warning: {error}")
-    
-    return default_configuration
-
-
-def calculate_file_hash(file_path: Path) -> str:
-    """Generate SHA256 hash for specified file."""
-    hash_algorithm = hashlib.sha256()
-    
-    try:
-        with open(file_path, 'rb') as target_file:
-            for data_chunk in iter(lambda: target_file.read(4096), b''):
-                hash_algorithm.update(data_chunk)
-    except Exception:
-        return ""
-    
-    return hash_algorithm.hexdigest()
-
-
-def save_download_record(model_info: Dict, success: bool, message: str) -> None:
-    """Record download attempt details."""
-    record_directory = Path.home() / '.docubot' / 'download_logs'
-    record_directory.mkdir(parents=True, exist_ok=True)
-    
-    record_filename = record_directory / f"download_{int(time.time())}.json"
-    
-    record_data = {
-        'timestamp': time.time(),
-        'datetime': time.strftime('%Y-%m-%d %H:%M:%S'),
-        'model': model_info,
-        'success': success,
-        'message': message
-    }
-    
-    try:
-        with open(record_filename, 'w') as record_file:
-            json.dump(record_data, record_file, indent=2)
-    except Exception as error:
-        print(f"Download record save warning: {error}")
-
-
-def check_disk_space(required_gb: float) -> Tuple[bool, str]:
-    """Validate available disk capacity."""
-    try:
-        import shutil
-        
-        home_directory = Path.home()
-        usage_data = shutil.disk_usage(str(home_directory))
-        
-        free_gigabytes = usage_data.free / (1024 ** 3)
-        
-        if free_gigabytes >= required_gb:
-            return True, f"Disk capacity sufficient: {free_gigabytes:.1f}GB available"
+            status_map = {
+                DownloadStatus.PENDING: "Pending",
+                DownloadStatus.DOWNLOADING: "Downloading",
+                DownloadStatus.VERIFYING: "Verifying",
+                DownloadStatus.COMPLETED: "Completed",
+                DownloadStatus.FAILED: "Failed",
+                DownloadStatus.CANCELLED: "Cancelled",
+                DownloadStatus.PARTIAL: "Partial"
+            }
+            
+            status_text = status_map.get(progress.status, str(progress.status))
+            
+            print(f"\r{progress.model_name:20} [{bar}] {percentage:6.2f}% "
+                  f"({downloaded_mb:.1f}/{total_mb:.1f} MB) {status_text:12} {speed_info}", end="")
         else:
-            return False, f"Insufficient disk space: {free_gigabytes:.1f}GB available, {required_gb}GB required"
+            status_map = {
+                DownloadStatus.PENDING: "Pending",
+                DownloadStatus.DOWNLOADING: "Downloading...",
+                DownloadStatus.VERIFYING: "Verifying...",
+                DownloadStatus.COMPLETED: "Completed",
+                DownloadStatus.FAILED: "Failed",
+                DownloadStatus.CANCELLED: "Cancelled",
+                DownloadStatus.PARTIAL: "Partial"
+            }
             
-    except Exception as error:
-        return False, f"Disk space verification error: {error}"
+            status_text = status_map.get(progress.status, str(progress.status))
+            print(f"\r{progress.model_name:20} {status_text}", end="")
+        
+        sys.stdout.flush()
+    
+    def _format_time(self, seconds: float) -> str:
+        """Format seconds into human-readable time."""
+        if seconds < 60:
+            return f"{seconds:.0f}s"
+        elif seconds < 3600:
+            minutes = seconds / 60
+            return f"{minutes:.0f}m"
+        else:
+            hours = seconds / 3600
+            return f"{hours:.1f}h"
+    
+    def list_available_models(self, args: argparse.Namespace):
+        """List available models."""
+        try:
+            models = self.manager.list_available_models()
+            
+            if args.json:
+                print(json.dumps(models, indent=2))
+                return
+            
+            print("\nAvailable Models:")
+            print("=" * 80)
+            print(f"{'Name':30} {'Size':10} {'Modified':20}")
+            print("-" * 80)
+            
+            for model in models:
+                name = model.get('name', '')
+                size = model.get('size', '')
+                modified = model.get('modified', '')
+                print(f"{name:30} {size:10} {modified:20}")
+            
+            print("=" * 80)
+            
+            local_models = self.manager.list_available_models(local_only=True)
+            if local_models:
+                print(f"\nLocal Models ({len(local_models)}):")
+                print(", ".join(m.get('name', '') for m in local_models))
+            
+        except ModelManagerError as e:
+            print(f"Error listing models: {e}", file=sys.stderr)
+            sys.exit(1)
+    
+    def download_single_model(self, model_name: str, args: argparse.Namespace) -> Dict[str, Any]:
+        """Download a single model."""
+        start_time = time.time()
+        result = {
+            "model": model_name,
+            "success": False,
+            "error": None,
+            "download_time": 0,
+            "final_status": None
+        }
+        
+        try:
+            if not args.quiet:
+                print(f"Starting download: {model_name}")
+            
+            last_progress = {}
+            
+            def progress_callback(progress: DownloadProgress):
+                if not args.quiet and progress.model_name == model_name:
+                    if args.json:
+                        return
+                    
+                    current_progress = {
+                        "percentage": progress.progress_percentage,
+                        "status": progress.status.value,
+                        "downloaded": progress.downloaded_bytes,
+                        "speed": progress.speed_bytes_per_sec
+                    }
+                    
+                    if current_progress != last_progress.get(model_name):
+                        self.show_progress_bar(progress)
+                        last_progress[model_name] = current_progress
+            
+            download_progress = self.manager.download_model(
+                model_name,
+                callback=progress_callback,
+                force=args.force
+            )
+            
+            while download_progress.status in [
+                DownloadStatus.PENDING,
+                DownloadStatus.DOWNLOADING,
+                DownloadStatus.VERIFYING
+            ]:
+                time.sleep(0.5)
+                
+                current_progress = self.manager.get_download_status(model_name)
+                if not current_progress:
+                    break
+                
+                download_progress = current_progress
+                
+                if time.time() - start_time > args.timeout:
+                    self.manager.cancel_download(model_name)
+                    raise TimeoutError(f"Download timeout after {args.timeout} seconds")
+            
+            result["download_time"] = time.time() - start_time
+            result["final_status"] = download_progress.status.value
+            
+            if download_progress.status == DownloadStatus.COMPLETED:
+                result["success"] = True
+                
+                if args.validate:
+                    if not args.quiet:
+                        print(f"\nValidating model: {model_name}")
+                    
+                    if self.manager.verify_model(model_name):
+                        result["validation"] = "passed"
+                    else:
+                        result["validation"] = "failed"
+                        result["success"] = False
+                        result["error"] = "Model validation failed"
+            
+            elif download_progress.status == DownloadStatus.FAILED:
+                result["error"] = download_progress.error_message or "Download failed"
+            
+            elif download_progress.status == DownloadStatus.CANCELLED:
+                result["error"] = "Download cancelled"
+            
+            if not args.quiet and not args.json:
+                if download_progress.status == DownloadStatus.COMPLETED:
+                    print(f"\n✓ Downloaded {model_name} in {result['download_time']:.1f}s")
+                else:
+                    status_text = download_progress.status.value.capitalize()
+                    print(f"\n✗ {status_text}: {model_name}")
+                    if download_progress.error_message:
+                        print(f"  Error: {download_progress.error_message}")
+            
+            return result
+            
+        except (ModelManagerError, TimeoutError) as e:
+            result["error"] = str(e)
+            result["download_time"] = time.time() - start_time
+            
+            if not args.quiet:
+                print(f"\n✗ Error downloading {model_name}: {e}")
+            
+            return result
+    
+    def download_multiple_models(self, model_names: List[str], args: argparse.Namespace) -> List[Dict[str, Any]]:
+        """Download multiple models concurrently."""
+        results = []
+        
+        if not args.quiet:
+            print(f"\nStarting download of {len(model_names)} model(s)")
+            if args.concurrent > 1:
+                print(f"Concurrent downloads: {args.concurrent}")
+            print()
+        
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.concurrent) as executor:
+            future_to_model = {
+                executor.submit(self.download_single_model, model, args): model
+                for model in model_names
+            }
+            
+            for future in concurrent.futures.as_completed(future_to_model):
+                model = future_to_model[future]
+                try:
+                    result = future.result()
+                    results.append(result)
+                except Exception as e:
+                    results.append({
+                        "model": model,
+                        "success": False,
+                        "error": str(e),
+                        "download_time": 0,
+                        "final_status": "exception"
+                    })
+        
+        return results
+    
+    def get_models_to_download(self, args: argparse.Namespace) -> List[str]:
+        """Determine which models to download based on arguments."""
+        models_to_download = []
+        
+        if args.all:
+            try:
+                available_models = self.manager.list_available_models()
+                models_to_download = [m['name'] for m in available_models]
+            except ModelManagerError as e:
+                print(f"Error getting available models: {e}", file=sys.stderr)
+                sys.exit(1)
+        
+        elif args.model:
+            models_to_download = args.model
+        
+        return models_to_download
+    
+    def print_summary(self, results: List[Dict[str, Any]], args: argparse.Namespace):
+        """Print download summary."""
+        if args.json:
+            summary = {
+                "timestamp": datetime.now().isoformat(),
+                "total": len(results),
+                "successful": sum(1 for r in results if r["success"]),
+                "failed": sum(1 for r in results if not r["success"]),
+                "results": results
+            }
+            print(json.dumps(summary, indent=2))
+            return
+        
+        successful = [r for r in results if r["success"]]
+        failed = [r for r in results if not r["success"]]
+        
+        print("\n" + "="*60)
+        print("DOWNLOAD SUMMARY")
+        print("="*60)
+        print(f"Total models: {len(results)}")
+        print(f"Successful: {len(successful)}")
+        print(f"Failed: {len(failed)}")
+        
+        if successful:
+            print(f"\nSuccessful downloads:")
+            for result in successful:
+                time_str = self._format_time(result["download_time"])
+                print(f"  ✓ {result['model']} ({time_str})")
+        
+        if failed:
+            print(f"\nFailed downloads:")
+            for result in failed:
+                error = result.get("error", "Unknown error")
+                print(f"  ✗ {result['model']}: {error}")
+        
+        total_time = sum(r.get("download_time", 0) for r in results)
+        if total_time > 0:
+            print(f"\nTotal download time: {self._format_time(total_time)}")
+        
+        print("="*60)
+    
+    def main(self) -> int:
+        """Main entry point for the CLI tool."""
+        args = self.parse_args()
+        
+        if args.list:
+            self.list_available_models(args)
+            return 0
+        
+        models_to_download = self.get_models_to_download(args)
+        
+        if not models_to_download:
+            print("No models specified for download.", file=sys.stderr)
+            print("Use --model <name> or --all to download models.", file=sys.stderr)
+            return 1
+        
+        try:
+            results = self.download_multiple_models(models_to_download, args)
+            self.print_summary(results, args)
+            
+            successful = sum(1 for r in results if r["success"])
+            if successful == len(results):
+                return 0
+            elif successful > 0:
+                return 2
+            else:
+                return 1
+                
+        except KeyboardInterrupt:
+            print("\n\nDownload interrupted by user.", file=sys.stderr)
+            
+            active_downloads = self.manager.get_active_downloads()
+            if active_downloads:
+                print(f"Cancelling {len(active_downloads)} active download(s)...")
+                for model in active_downloads:
+                    self.manager.cancel_download(model)
+            
+            return 130  # SIGINT exit code
+        
+        except Exception as e:
+            print(f"Unexpected error: {e}", file=sys.stderr)
+            return 1
 
 
 def main():
-    """Execute model acquisition workflow."""
-    parser = argparse.ArgumentParser(description="DocuBot Model Acquisition System")
-    parser.add_argument('--models', type=str, help='Comma-delimited model list')
-    parser.add_argument('--type', choices=['llm', 'embedding', 'all'], default='all',
-                       help='Model category specification')
-    parser.add_argument('--config', type=str, help='Configuration file path')
-    parser.add_argument('--verify-only', action='store_true',
-                       help='Validate existing models without acquisition')
-    parser.add_argument('--skip-ollama-check', action='store_true',
-                       help='Bypass Ollama installation verification')
-    parser.add_argument('--skip-space-check', action='store_true',
-                       help='Bypass disk capacity verification')
-    parser.add_argument('--verbose', action='store_true',
-                       help='Enable detailed output')
-    parser.add_argument('--use-binary', action='store_true',
-                       help='Employ binary protocol for Ollama downloads')
-    
-    args = parser.parse_args()
-    
-    print("DocuBot Model Acquisition System")
-    print("=" * 50)
-    
-    configuration_path = Path(args.config) if args.config else None
-    configuration = load_model_config(configuration_path)
-    
-    if not args.skip_ollama_check:
-        ollama_status, ollama_status_message = check_ollama_installed()
-        print(f"Ollama Status: {ollama_status_message}")
-    
-    sentence_transformers_status, st_status_message = check_sentence_transformers_installed()
-    print(f"Sentence-transformers Status: {st_status_message}")
-    
-    acquisition_list = []
-    
-    if args.models:
-        user_specified_models = [model.strip() for model in args.models.split(',')]
-        
-        for model_identifier in user_specified_models:
-            if ':7b' in model_identifier or model_identifier.startswith(('llama', 'mistral')):
-                acquisition_list.append({
-                    'type': 'llm',
-                    'name': model_identifier,
-                    'display_name': model_identifier
-                })
-            else:
-                acquisition_list.append({
-                    'type': 'embedding',
-                    'name': model_identifier,
-                    'display_name': model_identifier
-                })
-    else:
-        if args.type in ['llm', 'all']:
-            acquisition_list.extend([
-                {**model, 'type': 'llm'} 
-                for model in configuration['llm_models']
-            ])
-        
-        if args.type in ['embedding', 'all']:
-            acquisition_list.extend([
-                {**model, 'type': 'embedding'} 
-                for model in configuration['embedding_models']
-            ])
-    
-    if not acquisition_list:
-        print("No models specified for acquisition.")
-        return
-    
-    if not args.skip_space_check:
-        estimated_requirement = len(acquisition_list) * 4
-        capacity_status, capacity_message = check_disk_space(estimated_requirement)
-        print(f"Storage Capacity: {capacity_message}")
-        
-        if not capacity_status:
-            print("Storage capacity insufficient. Process terminated.")
-            return
-    
-    print(f"\nProcessing {len(acquisition_list)} model(s)...")
-    
-    successful_acquisitions = 0
-    failed_acquisitions = 0
-    
-    for model_data in acquisition_list:
-        model_category = model_data['type']
-        model_identifier = model_data['name']
-        model_display_name = model_data.get('display_name', model_identifier)
-        
-        print(f"\n{'='*60}")
-        print(f"Model: {model_display_name}")
-        print(f"Category: {model_category.upper()}")
-        print(f"Identifier: {model_identifier}")
-        
-        if args.verify_only:
-            verification_status, verification_message = verify_model_download(model_category, model_identifier)
-            print(f"Verification: {verification_message}")
-            
-            if verification_status:
-                successful_acquisitions += 1
-            else:
-                failed_acquisitions += 1
-            
-            save_download_record(model_data, verification_status, verification_message)
-            continue
-        
-        if model_category == 'llm':
-            if not ollama_status and not args.skip_ollama_check:
-                print("LLM acquisition skipped: Ollama unavailable")
-                failed_acquisitions += 1
-                save_download_record(model_data, False, "Ollama unavailable")
-                continue
-            
-            if args.use_binary:
-                acquisition_status, acquisition_message = download_ollama_model_binary(model_identifier, args.verbose)
-            else:
-                acquisition_status, acquisition_message = download_ollama_model(model_identifier, args.verbose)
-            
-            print(f"Acquisition: {acquisition_message}")
-            
-            if acquisition_status:
-                successful_acquisitions += 1
-                
-                verification_status, verification_message = verify_model_download(model_category, model_identifier)
-                print(f"Verification: {verification_message}")
-                acquisition_message = f"{acquisition_message} | {verification_message}"
-            else:
-                failed_acquisitions += 1
-            
-            save_download_record(model_data, acquisition_status, acquisition_message)
-        
-        elif model_category == 'embedding':
-            if not sentence_transformers_status:
-                print("Embedding acquisition skipped: sentence-transformers unavailable")
-                failed_acquisitions += 1
-                save_download_record(model_data, False, "sentence-transformers unavailable")
-                continue
-            
-            acquisition_status, acquisition_message = download_sentence_transformer_model(model_identifier)
-            print(f"Acquisition: {acquisition_message}")
-            
-            if acquisition_status:
-                successful_acquisitions += 1
-                
-                verification_status, verification_message = verify_model_download(model_category, model_identifier)
-                print(f"Verification: {verification_message}")
-                acquisition_message = f"{acquisition_message} | {verification_message}"
-            else:
-                failed_acquisitions += 1
-            
-            save_download_record(model_data, acquisition_status, acquisition_message)
-        
-        else:
-            print(f"Unsupported model category: {model_category}")
-            failed_acquisitions += 1
-            save_download_record(model_data, False, f"Unsupported model category: {model_category}")
-    
-    print(f"\n{'='*50}")
-    print("ACQUISITION SUMMARY")
-    print(f"{'='*50}")
-    print(f"Total models processed: {len(acquisition_list)}")
-    print(f"Successful: {successful_acquisitions}")
-    print(f"Failed: {failed_acquisitions}")
-    
-    if successful_acquisitions == len(acquisition_list):
-        print("All models acquired successfully.")
-        sys.exit(0)
-    elif successful_acquisitions > 0:
-        print(f"Partial success: {successful_acquisitions}/{len(acquisition_list)} models acquired.")
-        sys.exit(1)
-    else:
-        print("All model acquisitions failed.")
-        sys.exit(2)
+    """Command-line entry point."""
+    cli = DownloadCLI()
+    return cli.main()
 
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    sys.exit(main())

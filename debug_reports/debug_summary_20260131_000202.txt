@@ -1,0 +1,96 @@
+====================================================================================================
+DOCUBOT DEBUG ANALYSIS REPORT
+====================================================================================================
+Generated: 2026-01-31 00:02:02
+Project: C:\Users\aarka\Github\project portofolio\junior project\DocuBot v.1\DocuBot
+====================================================================================================
+
+SUMMARY
+--------------------------------------------------
+Total Issues Found: 8
+  • High Priority: 7
+  • Medium Priority: 1
+  • Low Priority: 0
+
+CRITICAL ISSUES (Must Fix):
+--------------------------------------------------
+1. [ERROR] src.document_processing.extractors.pdf_extractor
+   Message: Import exists but fails: No module named 'src.document_processing.pdf_extractor'
+   Fix: Check src/document_processing/extractors/pdf_extractor.py and __init__.py for import issues
+
+2. [ERROR] src.document_processing.extractors.txt_extractor
+   Message: Import exists but fails: No module named 'src.document_processing.txt_extractor'
+   Fix: Check src/document_processing/extractors/txt_extractor.py and __init__.py for import issues
+
+3. [ERROR] src.document_processing.extractors.docx_extractor
+   Message: Import exists but fails: No module named 'src.document_processing.docx_extractor'
+   Fix: Check src/document_processing/extractors/docx_extractor.py and __init__.py for import issues
+
+4. [ERROR] src.document_processing.extractors.base_extractor
+   Message: Import exists but fails: No module named 'src.document_processing.extractors.extractors'
+   Fix: Check src/document_processing/extractors/base_extractor.py and __init__.py for import issues
+
+5. [ERROR] src.document_processing.extractors
+   Message: Import exists but fails: cannot import name 'create_extractor' from 'src.document_processing.extractors'
+   Fix: Check src/document_processing/extractors/__init__.py and __init__.py for import issues
+
+6. [ERROR] src/document_processing/extractors/__init__.py
+   Message: Missing exports in __init__.py: ['TXTExtractor', 'create_extractor']
+   Fix: Add missing exports to src/document_processing/extractors/__init__.py
+
+7. [ERROR] src.document_processing.extractors
+   Message: File does not exist: src/document_processing/extractors.py
+   Fix: Create missing file: src/document_processing/extractors.py
+
+
+PROJECT STRUCTURE
+--------------------------------------------------
+Completion: 96.9%
+Found: 31 / 32 items
+
+Missing Critical Files:
+
+IMPORT ISSUES
+--------------------------------------------------
+Total Import Errors: 5
+
+Unresolved Import Issues:
+  • src.document_processing.extractors.pdf_extractor
+    Error: No module named 'src.document_processing.pdf_extractor'
+  • src.document_processing.extractors.txt_extractor
+    Error: No module named 'src.document_processing.txt_extractor'
+  • src.document_processing.extractors.docx_extractor
+    Error: No module named 'src.document_processing.docx_extractor'
+  • src.document_processing.extractors.base_extractor
+    Error: No module named 'src.document_processing.extractors.extractors'
+  • src.document_processing.extractors
+    Error: cannot import name 'create_extractor' from 'src.document_processing.extractors'
+
+RECOMMENDED REPAIR PLAN
+--------------------------------------------------
+
+Step 1 [HIGH]: Create missing extractor files
+Details: Create 7 missing extractor files
+Commands:
+  • Create: src/document_processing/extractors/pdf_extractor.py
+  • Create: src/document_processing/extractors/txt_extractor.py
+  • Create: src/document_processing/extractors/docx_extractor.py
+  • Create: src/document_processing/extractors/base_extractor.py
+  • Fix: src/document_processing/extractors/__init__.py
+
+Step 2 [HIGH]: Fix __init__.py files
+Details: Ensure proper exports in __init__.py files
+Commands:
+  • Edit src/document_processing/extractors/__init__.py to export extractor classes
+  • Add __all__ = ['PDFExtractor', 'TXTExtractor', 'DOCXExtractor', 'BaseExtractor', 'create_extractor']
+
+Step 5 [MEDIUM]: Test the application
+Details: Run app.py to verify fixes
+Commands:
+  • python app.py --cli (for CLI mode)
+  • python app.py --gui (for GUI mode)
+  • Check for any remaining errors
+
+====================================================================================================
+END OF REPORT
+====================================================================================================

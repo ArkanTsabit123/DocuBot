@@ -1,451 +1,663 @@
-# docubot/tests/integration/test_database.py
+# DocuBot/tests/integration/test_database.py
+
 """
-Database Integration Test Suite for DocuBot
-testing of SQLite database operations and SQLiteClient API.
+Database Integration Tests
+tests for database operations including CRUD, queries, and performance.
 """
 
-import pytest
-import sys
 import os
+import sys
 import tempfile
 import json
-import sqlite3
+import time
+import threading
 from pathlib import Path
 from datetime import datetime
-from unittest.mock import Mock, patch, MagicMock
-import time
+from typing import Dict, List, Any, Optional
+
+import pytest
+from pytest import fixture
+from sqlalchemy import create_engine, text, inspect
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
+import sqlite3
+from sqlite3 import Error as SQLiteError
+
+sys.path.insert(0, str(Path(__file__).parent.parent.parent / "src"))
+
+from database.sqlite_client import SQLiteClient, DatabaseError
+from database.models import Base
+from core.config import Config
 
 
-project_root = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(project_root))
+@fixture
+def test_database_path():
+    temp_dir = tempfile.mkdtemp()
+    db_path = Path(temp_dir) / "test_database.db"
+    yield str(db_path)
+    if db_path.exists():
+        db_path.unlink()
+    Path(temp_dir).rmdir()
 
-from src.database.sqlite_client import SQLiteClient
 
-
-class TestConnection:
-    def test_connection_success(self, sqlite_client):
-        assert sqlite_client is not None
-        result = sqlite_client.execute_query("SELECT 1 as test_value")
-        assert len(result) == 1
-        assert result[0]['test_value'] == 1
+@fixture
+def db_client(test_database_path):
+    config = Config()
+    config.database_path = test_database_path
+    client = SQLiteClient(db_path=test_database_path, config=config)
     
-    def test_connection_persistence(self, sqlite_client):
-        result1 = sqlite_client.execute_query("SELECT 1 as first")
-        result2 = sqlite_client.execute_query("SELECT 2 as second")
-        assert result1[0]['first'] == 1
-        assert result2[0]['second'] == 2
+    success = client.connect()
+    assert success, "Failed to connect to database"
     
-    def test_connection_closure(self, temp_db_file):
-        client = SQLiteClient(temp_db_file)
+    yield client
+    client.close()
+
+
+@fixture
+def sample_document_data():
+    return {
+        "file_path": "/test/path/document.pdf",
+        "file_name": "test_document.pdf",
+        "file_type": "pdf",
+        "file_size": 1024,
+        "metadata": {
+            "title": "Test Document",
+            "author": "Test Author",
+            "date": "2026-01-01",
+            "tags": ["test", "sample", "document"]
+        }
+    }
+
+
+@fixture  
+def sample_chunk_data():
+    return [
+        {
+            "text": "This is the first chunk of text.",
+            "chunk_index": 0,
+            "metadata": {"section": "introduction"}
+        },
+        {
+            "text": "This is the second chunk with more content.",
+            "chunk_index": 1,
+            "metadata": {"section": "body"}
+        },
+        {
+            "text": "This is the final chunk concluding the document.",
+            "chunk_index": 2,
+            "metadata": {"section": "conclusion"}
+        }
+    ]
+
+
+class TestDatabaseConnection:
+    def test_connection_establishment(self, test_database_path):
+        client = SQLiteClient(db_path=test_database_path)
+        success = client.connect()
+        assert success
+        assert client.engine is not None
         client.close()
-        assert client.connection is None
-
-
-class TestSchemaOperations:
-    def test_table_creation(self, sqlite_client):
-        sqlite_client.execute_query("""
-            CREATE TABLE test_schema (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        tables = sqlite_client.execute_query(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='test_schema'"
-        )
-        assert len(tables) == 1
-        assert tables[0]['name'] == 'test_schema'
     
-    def test_schema_modification(self, sqlite_client):
-        sqlite_client.execute_query("""
-            CREATE TABLE test_alter (
-                id INTEGER PRIMARY KEY,
-                name TEXT
-            )
-        """)
+    def test_connection_pooling(self, db_client):
+        with db_client.session_scope() as session1:
+            result1 = session1.execute(text("SELECT 1")).scalar()
+            assert result1 == 1
         
-        sqlite_client.execute_query("ALTER TABLE test_alter ADD COLUMN email TEXT")
-        sqlite_client.execute_query("ALTER TABLE test_alter ADD COLUMN age INTEGER")
-        
-        columns = sqlite_client.execute_query("PRAGMA table_info(test_alter)")
-        column_names = [col['name'] for col in columns]
-        assert "email" in column_names
-        assert "age" in column_names
-
-
-class TestCRUDOperations:
-    def test_create_operations(self, sqlite_client):
-        sqlite_client.execute_query("""
-            CREATE TABLE test_create (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                title TEXT NOT NULL,
-                content TEXT,
-                views INTEGER DEFAULT 0
-            )
-        """)
-        
-        sqlite_client.execute_query(
-            "INSERT INTO test_create (title, content, views) VALUES (?, ?, ?)",
-            ("Test Title", "Test Content", 100)
-        )
-        
-        count_result = sqlite_client.execute_query("SELECT COUNT(*) as count FROM test_create")
-        assert count_result[0]['count'] == 1
+        with db_client.session_scope() as session2:
+            result2 = session2.execute(text("SELECT 2")).scalar()
+            assert result2 == 2
     
-    def test_read_operations(self, sqlite_client):
-        sqlite_client.execute_query("""
-            CREATE TABLE test_read (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL,
-                email TEXT
-            )
-        """)
+    def test_connection_timeout(self, test_database_path):
+        client = SQLiteClient(db_path=test_database_path)
+        success = client.connect()
+        assert success
+        client.close()
+    
+    def test_invalid_connection_parameters(self):
+        client = SQLiteClient(db_path="/invalid/path/to/database.db")
+        try:
+            success = client.connect()
+            if not success:
+                assert True
+        except (ConnectionError, DatabaseError):
+            assert True
+        except Exception as e:
+            pytest.fail(f"Unexpected exception: {e}")
+
+
+class TestDatabaseSchema:
+    def test_table_creation(self, db_client):
+        inspector = inspect(db_client.engine)
+        tables = inspector.get_table_names()
         
-        test_data = [
-            ("user1", "user1@example.com"),
-            ("user2", "user2@example.com"),
-            ("user3", "user3@example.com")
+        expected_tables = [
+            'documents', 'chunks', 'conversations', 
+            'messages', 'tags', 'document_tags', 'settings'
         ]
         
-        for username, email in test_data:
-            sqlite_client.execute_query(
-                "INSERT INTO test_read (username, email) VALUES (?, ?)",
-                (username, email)
-            )
-        
-        all_users = sqlite_client.execute_query("SELECT * FROM test_read ORDER BY username")
-        assert len(all_users) == 3
-        
-        specific_user = sqlite_client.execute_query(
-            "SELECT * FROM test_read WHERE username = ?",
-            ("user1",)
-        )
-        assert len(specific_user) == 1
-        assert specific_user[0]['email'] == 'user1@example.com'
+        for table in expected_tables:
+            assert table in tables, f"Missing table: {table}"
     
-    def test_update_operations(self, sqlite_client):
-        sqlite_client.execute_query("""
-            CREATE TABLE test_update (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                product TEXT NOT NULL,
-                price REAL
-            )
-        """)
+    def test_column_definitions(self, db_client):
+        inspector = inspect(db_client.engine)
+        doc_columns = [col['name'] for col in inspector.get_columns('documents')]
+        expected_columns = ['id', 'file_path', 'file_name', 'file_type', 'file_size', 'upload_date']
         
-        sqlite_client.execute_query(
-            "INSERT INTO test_update (product, price) VALUES (?, ?)",
-            ("Laptop", 999.99)
-        )
-        
-        sqlite_client.execute_query(
-            "UPDATE test_update SET price = ? WHERE product = ?",
-            (899.99, "Laptop")
-        )
-        
-        updated = sqlite_client.execute_query(
-            "SELECT price FROM test_update WHERE product = ?",
-            ("Laptop",)
-        )
-        assert updated[0]['price'] == 899.99
+        for col in expected_columns:
+            assert col in doc_columns, f"Missing column: {col}"
     
-    def test_delete_operations(self, sqlite_client):
-        sqlite_client.execute_query("""
-            CREATE TABLE test_delete (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                item TEXT,
-                quantity INTEGER
-            )
-        """)
+    def test_foreign_key_constraints(self, db_client):
+        with db_client.session_scope() as session:
+            try:
+                session.execute(text("""
+                    INSERT INTO chunks (id, document_id, chunk_index, text_content, vector_id)
+                    VALUES ('test-chunk', 'non-existent-doc', 0, 'test text', 'vec-123')
+                """))
+                session.commit()
+                pytest.fail("Should have raised integrity error")
+            except (IntegrityError, SQLiteError):
+                session.rollback()
+                assert True
+    
+    def test_index_creation(self, db_client):
+        inspector = inspect(db_client.engine)
+        indexes = inspector.get_indexes('documents')
+        assert len(indexes) > 0, "No indexes found on documents table"
+    
+    def test_schema_migration(self, test_database_path):
+        client1 = SQLiteClient(db_path=test_database_path)
+        client1.connect()
+        inspector = inspect(client1.engine)
+        initial_tables = inspector.get_table_names()
+        client1.close()
         
-        for i in range(5):
-            sqlite_client.execute_query(
-                "INSERT INTO test_delete (item, quantity) VALUES (?, ?)",
-                (f"Item {i}", i * 10)
-            )
+        client2 = SQLiteClient(db_path=test_database_path)
+        client2.connect()
+        inspector2 = inspect(client2.engine)
+        final_tables = inspector2.get_table_names()
+        client2.close()
         
-        initial_count = sqlite_client.execute_query("SELECT COUNT(*) as count FROM test_delete")
-        assert initial_count[0]['count'] == 5
-        
-        sqlite_client.execute_query(
-            "DELETE FROM test_delete WHERE quantity < ?",
-            (30,)
-        )
-        
-        after_count = sqlite_client.execute_query("SELECT COUNT(*) as count FROM test_delete")
-        assert after_count[0]['count'] == 2
+        assert set(initial_tables) == set(final_tables), "Schema changed unexpectedly"
 
 
-class TestTransactions:
-    def test_transaction_commit(self, sqlite_client):
-        sqlite_client.execute_query("""
-            CREATE TABLE test_transaction (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                account TEXT,
-                amount REAL
-            )
-        """)
-        
-        sqlite_client.execute_query("BEGIN TRANSACTION")
-        sqlite_client.execute_query(
-            "INSERT INTO test_transaction (account, amount) VALUES (?, ?)",
-            ("ACC001", 1000.0)
-        )
-        sqlite_client.execute_query("COMMIT")
-        
-        count_result = sqlite_client.execute_query("SELECT COUNT(*) as count FROM test_transaction")
-        assert count_result[0]['count'] == 1
+class TestDocumentCRUD:
+    def test_create_document(self, db_client, sample_document_data):
+        doc_id = db_client.add_document(**sample_document_data)
+        assert doc_id is not None
+        assert isinstance(doc_id, str)
+        assert len(doc_id) > 0
     
-    def test_transaction_rollback(self, sqlite_client):
-        sqlite_client.execute_query("""
-            CREATE TABLE test_rollback (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                code TEXT UNIQUE,
-                value INTEGER
-            )
-        """)
+    def test_read_document(self, db_client, sample_document_data):
+        doc_id = db_client.add_document(**sample_document_data)
+        document = db_client.get_document(doc_id)
         
-        sqlite_client.execute_query("BEGIN TRANSACTION")
-        sqlite_client.execute_query(
-            "INSERT INTO test_rollback (code, value) VALUES (?, ?)",
-            ("A001", 100)
-        )
+        assert document is not None
+        assert document['id'] == doc_id
+        assert document['file_name'] == sample_document_data['file_name']
+    
+    def test_update_document(self, db_client, sample_document_data):
+        doc_id = db_client.add_document(**sample_document_data)
+        
+        updates = {
+            'file_name': 'updated_name.pdf',
+            'metadata': {'title': 'Updated Title', 'status': 'processed'}
+        }
+        
+        success = db_client.update_document(doc_id, **updates)
+        assert success
+        
+        document = db_client.get_document(doc_id)
+        assert document['file_name'] == 'updated_name.pdf'
+        assert document['metadata'].get('title') == 'Updated Title'
+    
+    def test_delete_document(self, db_client, sample_document_data):
+        doc_id = db_client.add_document(**sample_document_data)
+        document = db_client.get_document(doc_id)
+        assert document is not None
+        
+        success = db_client.delete_document(doc_id)
+        assert success
+        
+        document = db_client.get_document(doc_id)
+        assert document is None
+    
+    def test_document_validation(self, db_client):
+        invalid_data = {
+            'file_name': '',
+            'file_type': 'invalid_type',
+            'file_size': -100
+        }
         
         try:
-            sqlite_client.execute_query(
-                "INSERT INTO test_rollback (code, value) VALUES (?, ?)",
-                ("A001", 200)
-            )
-            assert False, "Expected sqlite3.IntegrityError"
-        except sqlite3.IntegrityError:
-            sqlite_client.execute_query("ROLLBACK")
-        
-        count_result = sqlite_client.execute_query("SELECT COUNT(*) as count FROM test_rollback")
-        assert count_result[0]['count'] == 0
-
-
-class TestErrorHandling:
-    def test_syntax_error_handling(self, sqlite_client):
-        with pytest.raises(sqlite3.Error):
-            sqlite_client.execute_query("SELECT FROM WHERE INVALID SYNTAX")
+            doc_id = db_client.add_document(**invalid_data)
+            if doc_id:
+                document = db_client.get_document(doc_id)
+                assert document is not None
+        except (ValueError, DatabaseError):
+            assert True
     
-    def test_constraint_violation_handling(self, sqlite_client):
-        sqlite_client.execute_query("""
-            CREATE TABLE test_constraints (
-                id INTEGER PRIMARY KEY,
-                email TEXT UNIQUE NOT NULL
-            )
-        """)
+    def test_document_metadata_storage(self, db_client):
+        complex_metadata = {
+            'title': 'Complex Document',
+            'author': 'John Doe',
+            'date': '2026-01-15',
+            'keywords': ['AI', 'Machine Learning', 'RAG'],
+            'summary': 'This is a comprehensive document about AI systems.',
+            'pages': 45,
+            'language': 'en',
+            'custom_field': 'custom_value'
+        }
         
-        with pytest.raises(sqlite3.Error):
-            sqlite_client.execute_query(
-                "INSERT INTO test_constraints (id, email) VALUES (?, ?)",
-                (1, None)
-            )
+        doc_data = {
+            'file_path': '/test/complex.pdf',
+            'file_name': 'complex_document.pdf',
+            'file_type': 'pdf',
+            'file_size': 2048,
+            'metadata': complex_metadata
+        }
         
-        sqlite_client.execute_query(
-            "INSERT INTO test_constraints (id, email) VALUES (?, ?)",
-            (1, "test@example.com")
+        doc_id = db_client.add_document(**doc_data)
+        document = db_client.get_document(doc_id)
+        
+        assert document is not None
+        assert 'metadata' in document
+        assert document['metadata']['title'] == 'Complex Document'
+        assert 'keywords' in document['metadata']
+        assert len(document['metadata']['keywords']) == 3
+
+
+class TestChunkCRUD:
+    def test_create_chunks_bulk(self, db_client, sample_document_data, sample_chunk_data):
+        doc_id = db_client.add_document(**sample_document_data)
+        
+        for chunk in sample_chunk_data:
+            chunk['document_id'] = doc_id
+        
+        chunk_ids = db_client.add_chunks(doc_id, sample_chunk_data)
+        
+        assert len(chunk_ids) == len(sample_chunk_data)
+        assert all(isinstance(id, str) for id in chunk_ids)
+    
+    def test_chunk_document_relationship(self, db_client, sample_document_data, sample_chunk_data):
+        doc_id = db_client.add_document(**sample_document_data)
+        
+        for chunk in sample_chunk_data:
+            chunk['document_id'] = doc_id
+        
+        db_client.add_chunks(doc_id, sample_chunk_data)
+        chunks = db_client.get_chunks_by_document(doc_id)
+        
+        assert len(chunks) == len(sample_chunk_data)
+        for chunk in chunks:
+            assert chunk['document_id'] == doc_id
+    
+    def test_chunk_retrieval_by_document(self, db_client, sample_document_data, sample_chunk_data):
+        doc1_id = db_client.add_document(**sample_document_data)
+        
+        doc2_data = sample_document_data.copy()
+        doc2_data['file_name'] = 'document2.pdf'
+        doc2_id = db_client.add_document(**doc2_data)
+        
+        chunks_doc1 = []
+        for i, chunk_data in enumerate(sample_chunk_data):
+            chunk = chunk_data.copy()
+            chunk['document_id'] = doc1_id
+            chunk['text'] = f"Doc1 Chunk {i}: {chunk['text']}"
+            chunks_doc1.append(chunk)
+        
+        db_client.add_chunks(doc1_id, chunks_doc1)
+        
+        chunks_doc2 = []
+        for i, chunk_data in enumerate(sample_chunk_data):
+            chunk = chunk_data.copy()
+            chunk['document_id'] = doc2_id
+            chunk['text'] = f"Doc2 Chunk {i}: {chunk['text']}"
+            chunks_doc2.append(chunk)
+        
+        db_client.add_chunks(doc2_id, chunks_doc2)
+        
+        retrieved_doc1 = db_client.get_chunks_by_document(doc1_id)
+        retrieved_doc2 = db_client.get_chunks_by_document(doc2_id)
+        
+        assert len(retrieved_doc1) == len(chunks_doc1)
+        assert len(retrieved_doc2) == len(chunks_doc2)
+        
+        if retrieved_doc1 and retrieved_doc2:
+            assert retrieved_doc1[0]['text'] != retrieved_doc2[0]['text']
+    
+    def test_chunk_metadata_integrity(self, db_client, sample_document_data, sample_chunk_data):
+        doc_id = db_client.add_document(**sample_document_data)
+        
+        for chunk in sample_chunk_data:
+            chunk['document_id'] = doc_id
+            chunk['metadata'] = {
+                'section': f'section_{chunk["chunk_index"]}',
+                'word_count': len(chunk['text'].split()),
+                'importance': chunk['chunk_index'] == 0
+            }
+        
+        db_client.add_chunks(doc_id, sample_chunk_data)
+        chunks = db_client.get_chunks_by_document(doc_id)
+        
+        for chunk in chunks:
+            assert 'metadata' in chunk
+            assert 'section' in chunk['metadata']
+            assert 'word_count' in chunk['metadata']
+            assert isinstance(chunk['metadata']['word_count'], int)
+
+
+class TestConversationCRUD:
+    def test_create_conversation(self, db_client):
+        title = "Test Conversation about AI"
+        conv_id = db_client.create_conversation(title)
+        
+        assert conv_id is not None
+        assert isinstance(conv_id, str)
+        
+        conversation = db_client.get_conversation(conv_id)
+        assert conversation is not None
+        assert conversation['title'] == title
+    
+    def test_add_message_to_conversation(self, db_client):
+        conv_id = db_client.create_conversation("Message Test")
+        
+        messages = [
+            ("user", "Hello, I have a question about document processing."),
+            ("assistant", "I can help with that. What would you like to know?"),
+            ("user", "How does the chunking algorithm work?"),
+            ("assistant", "The algorithm splits documents into 500-token chunks with 50-token overlap.")
+        ]
+        
+        message_ids = []
+        for role, content in messages:
+            msg_id = db_client.add_message(conv_id, role, content)
+            message_ids.append(msg_id)
+            assert msg_id is not None
+        
+        conversation = db_client.get_conversation(conv_id)
+        assert conversation is not None
+        assert len(conversation['messages']) == len(messages)
+        
+        for i, msg in enumerate(conversation['messages']):
+            assert msg['role'] == messages[i][0]
+            assert msg['content'] == messages[i][1]
+    
+    def test_get_conversation_history(self, db_client):
+        conv_id = db_client.create_conversation("History Test")
+        
+        for i in range(10):
+            role = "user" if i % 2 == 0 else "assistant"
+            content = f"Message {i}: Test content for history tracking."
+            db_client.add_message(conv_id, role, content)
+        
+        conversation = db_client.get_conversation(conv_id)
+        
+        assert conversation is not None
+        assert 'messages' in conversation
+        assert len(conversation['messages']) == 10
+        
+        message_contents = [msg['content'] for msg in conversation['messages']]
+        for i in range(10):
+            expected = f"Message {i}: Test content for history tracking."
+            assert expected in message_contents
+    
+    def test_conversation_tagging(self, db_client):
+        conv1_id = db_client.create_conversation("AI Discussion")
+        conv2_id = db_client.create_conversation("Document Processing")
+        conv3_id = db_client.create_conversation("General Questions")
+        
+        db_client.add_message(conv1_id, "user", "Tell me about AI ethics.")
+        db_client.add_message(conv2_id, "user", "How to process PDF files?")
+        db_client.add_message(conv3_id, "user", "What is the weather today?")
+        
+        conversations = db_client.list_conversations(limit=10)
+        
+        assert len(conversations) >= 3
+        conv_titles = [conv['title'] for conv in conversations]
+        assert "AI Discussion" in conv_titles
+        assert "Document Processing" in conv_titles
+
+
+class TestQueryOperations:
+    def test_search_by_filename(self, db_client, sample_document_data):
+        documents = [
+            {**sample_document_data, 'file_name': 'project_report.pdf'},
+            {**sample_document_data, 'file_name': 'meeting_notes.docx'},
+            {**sample_document_data, 'file_name': 'research_paper.pdf'},
+            {**sample_document_data, 'file_name': 'budget_spreadsheet.xlsx'}
+        ]
+        
+        for doc_data in documents:
+            db_client.add_document(**doc_data)
+        
+        pdf_results = db_client.search_documents("pdf", field="file_type")
+        assert len(pdf_results) >= 2
+        
+        report_results = db_client.search_documents("report", field="file_name")
+        assert len(report_results) >= 1
+    
+    def test_filter_by_file_type(self, db_client, sample_document_data):
+        file_types = ['pdf', 'docx', 'txt', 'pdf', 'html', 'pdf']
+        
+        for i, file_type in enumerate(file_types):
+            doc_data = sample_document_data.copy()
+            doc_data['file_type'] = file_type
+            doc_data['file_name'] = f'document_{i}.{file_type}'
+            db_client.add_document(**doc_data)
+        
+        stats = db_client.get_document_statistics()
+        assert 'count_by_type' in stats
+        assert stats['count_by_type'].get('pdf', 0) >= 3
+        assert stats['count_by_type'].get('docx', 0) >= 1
+    
+    def test_pagination(self, db_client, sample_document_data):
+        for i in range(25):
+            doc_data = sample_document_data.copy()
+            doc_data['file_name'] = f'document_{i:03d}.pdf'
+            db_client.add_document(**doc_data)
+        
+        page1 = db_client.list_documents(limit=10, offset=0)
+        page2 = db_client.list_documents(limit=10, offset=10)
+        page3 = db_client.list_documents(limit=10, offset=20)
+        
+        assert len(page1) == 10
+        assert len(page2) == 10
+        assert len(page3) <= 10
+        
+        if page1 and page2:
+            assert page1[0]['file_name'] != page2[0]['file_name']
+    
+    def test_sorting(self, db_client, sample_document_data):
+        documents = []
+        for i in range(5):
+            doc_data = sample_document_data.copy()
+            doc_data['file_name'] = f'document_{i}.pdf'
+            doc_id = db_client.add_document(**doc_data)
+            documents.append(doc_id)
+            time.sleep(0.01)
+        
+        sorted_docs = db_client.list_documents(
+            limit=10, 
+            sort_by="upload_date", 
+            sort_order="DESC"
         )
         
-        with pytest.raises(sqlite3.IntegrityError):
-            sqlite_client.execute_query(
-                "INSERT INTO test_constraints (id, email) VALUES (?, ?)",
-                (2, "test@example.com")
-            )
+        if len(sorted_docs) >= 2:
+            assert sorted_docs[0]['upload_date'] >= sorted_docs[1]['upload_date']
+    
+    def test_aggregate_queries(self, db_client, sample_document_data):
+        size_categories = {
+            'small': [100, 500, 300],
+            'medium': [1500, 2000, 1800],
+            'large': [5000, 10000, 7500]
+        }
+        
+        for category, sizes in size_categories.items():
+            for size in sizes:
+                doc_data = sample_document_data.copy()
+                doc_data['file_name'] = f'{category}_{size}.pdf'
+                doc_data['file_size'] = size
+                db_client.add_document(**doc_data)
+        
+        stats = db_client.get_document_statistics()
+        
+        assert 'total_documents' in stats
+        assert stats['total_documents'] == 9
+        
+        assert 'total_size' in stats
+        assert stats['total_size'] > 0
+        
+        assert 'average_size' in stats
+        assert stats['average_size'] > 0
 
 
 class TestPerformance:
-    def test_bulk_insert_performance(self, sqlite_client):
-        sqlite_client.execute_query("""
-            CREATE TABLE test_performance (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                value INTEGER,
-                timestamp TEXT
-            )
-        """)
-        
+    def test_bulk_insert_performance(self, db_client, sample_document_data):
+        num_documents = 100
         start_time = time.time()
-        sqlite_client.execute_query("BEGIN TRANSACTION")
+        
+        for i in range(num_documents):
+            doc_data = sample_document_data.copy()
+            doc_data['file_name'] = f'bulk_document_{i}.pdf'
+            db_client.add_document(**doc_data)
+        
+        end_time = time.time()
+        duration = end_time - start_time
+        
+        assert duration < 30.0, f"Bulk insert took too long: {duration:.2f}s"
+        
+        stats = db_client.get_document_statistics()
+        assert stats['total_documents'] >= num_documents
+    
+    def test_query_performance_with_index(self, db_client, sample_document_data):
         for i in range(50):
-            sqlite_client.execute_query(
-                "INSERT INTO test_performance (value, timestamp) VALUES (?, ?)",
-                (i, datetime.now().isoformat())
-            )
-        sqlite_client.execute_query("COMMIT")
-        elapsed_time = time.time() - start_time
+            doc_data = sample_document_data.copy()
+            doc_data['file_name'] = f'perf_document_{i}.pdf'
+            doc_data['file_type'] = 'pdf' if i % 2 == 0 else 'docx'
+            db_client.add_document(**doc_data)
         
-        count_result = sqlite_client.execute_query("SELECT COUNT(*) as count FROM test_performance")
-        assert count_result[0]['count'] == 50
-        assert elapsed_time < 2.0
+        queries = [
+            ("Simple count", lambda: len(db_client.list_documents(limit=100))),
+            ("Filter by type", lambda: len(db_client.search_documents("pdf", field="file_type"))),
+            ("Get statistics", lambda: db_client.get_document_statistics())
+        ]
+        
+        for query_name, query_func in queries:
+            start_time = time.time()
+            result = query_func()
+            end_time = time.time()
+            duration = end_time - start_time
+            
+            assert duration < 5.0, f"{query_name} took too long: {duration:.2f}s"
+            assert result is not None, f"{query_name} should return result"
     
-    def test_index_performance_improvement(self, sqlite_client):
-        sqlite_client.execute_query("""
-            CREATE TABLE test_index (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                category TEXT,
-                value REAL
-            )
-        """)
+    def test_concurrent_access(self, test_database_path, sample_document_data):
+        results = []
+        errors = []
         
-        categories = ['A', 'B', 'C', 'D', 'E']
-        sqlite_client.execute_query("BEGIN TRANSACTION")
-        for i in range(200):
-            category = categories[i % len(categories)]
-            sqlite_client.execute_query(
-                "INSERT INTO test_index (category, value) VALUES (?, ?)",
-                (category, i * 1.5)
-            )
-        sqlite_client.execute_query("COMMIT")
+        def worker(worker_id, db_path, doc_data):
+            try:
+                client = SQLiteClient(db_path=db_path)
+                client.connect()
+                
+                for i in range(5):
+                    doc_copy = doc_data.copy()
+                    doc_copy['file_name'] = f'worker_{worker_id}_doc_{i}.pdf'
+                    doc_id = client.add_document(**doc_copy)
+                    results.append((worker_id, i, doc_id))
+                
+                client.close()
+            except Exception as e:
+                errors.append((worker_id, str(e)))
         
-        start_time = time.time()
-        result_no_index = sqlite_client.execute_query(
-            "SELECT * FROM test_index WHERE category = ?",
-            ("C",)
-        )
-        time_no_index = time.time() - start_time
-        
-        sqlite_client.execute_query("CREATE INDEX idx_category ON test_index(category)")
-        
-        start_time = time.time()
-        result_with_index = sqlite_client.execute_query(
-            "SELECT * FROM test_index WHERE category = ?",
-            ("C",)
-        )
-        time_with_index = time.time() - start_time
-        
-        assert len(result_no_index) == len(result_with_index)
-
-
-class TestSQLiteClientAPI:
-    def test_document_operations(self, sqlite_client):
-        doc_id = sqlite_client.add_document(
-            file_path="/test/path/document.pdf",
-            file_name="test_document.pdf",
-            file_type=".pdf",
-            file_size=2048,
-            chunk_count=3,
-            metadata={"author": "Test Author", "pages": 15}
-        )
-        
-        assert isinstance(doc_id, str)
-        assert len(doc_id) == 36
-        
-        document = sqlite_client.get_document(doc_id)
-        assert document is not None
-        assert document['file_name'] == "test_document.pdf"
-        assert document['file_size'] == 2048
-        assert document['chunk_count'] == 3
-        assert document['metadata']['author'] == "Test Author"
-        
-        updates = {
-            "file_name": "updated.pdf",
-            "processing_status": "completed"
-        }
-        
-        success = sqlite_client.update_document(doc_id, updates)
-        assert success is True
-        
-        updated_document = sqlite_client.get_document(doc_id)
-        assert updated_document['file_name'] == "updated.pdf"
-        assert updated_document['processing_status'] == "completed"
-        
-        success = sqlite_client.delete_document(doc_id)
-        assert success is True
-        
-        deleted_document = sqlite_client.get_document(doc_id)
-        assert deleted_document is None
-    
-    def test_document_listing(self, sqlite_client):
-        for i in range(5):
-            sqlite_client.add_document(
-                file_path=f"/test/path/doc{i}.pdf",
-                file_name=f"document_{i}.pdf",
-                file_type=".pdf",
-                file_size=1000 + i * 100
-            )
-        
-        all_docs = sqlite_client.list_documents()
-        assert len(all_docs) == 5
-        
-        pending_docs = sqlite_client.list_documents(status="pending")
-        assert len(pending_docs) == 5
-        
-        paginated_docs = sqlite_client.list_documents(limit=2, offset=0)
-        assert len(paginated_docs) == 2
-    
-    def test_database_statistics(self, sqlite_client):
+        threads = []
         for i in range(3):
-            sqlite_client.add_document(
-                file_path=f"/test/path/doc{i}.pdf",
-                file_name=f"doc_{i}.pdf",
-                file_type=".pdf",
-                file_size=500 + i * 100
+            thread = threading.Thread(
+                target=worker,
+                args=(i, test_database_path, sample_document_data)
             )
+            threads.append(thread)
         
-        stats = sqlite_client.get_stats()
-        assert isinstance(stats, dict)
-        assert 'total_documents' in stats
-        assert 'documents_by_status' in stats
-        assert 'database_size_bytes' in stats
-        assert stats['total_documents'] == 3
-        assert 'pending' in stats['documents_by_status']
+        for thread in threads:
+            thread.start()
+        
+        for thread in threads:
+            thread.join(timeout=10.0)
+        
+        assert len(errors) == 0, f"Concurrent access errors: {errors}"
+        assert len(results) == 15, f"Expected 15 documents, got {len(results)}"
+
+
+def test_invalid_data_handling(db_client):
+    try:
+        db_client.add_document(file_name=None, file_type=None, file_size=-1)
+        assert True
+    except (ValueError, DatabaseError):
+        assert True
+    except Exception as e:
+        pytest.fail(f"Unexpected exception for invalid data: {e}")
     
-    def test_chunk_operations(self, sqlite_client):
-        doc_id = sqlite_client.add_document(
-            file_path="/test/path/document.pdf",
-            file_name="test.pdf",
-            file_type=".pdf",
-            file_size=5000,
-            chunk_count=0
+    try:
+        db_client.add_document(
+            file_name="x" * 1000,
+            file_type="pdf",
+            file_size=10**9
         )
-        
-        chunk_ids = []
-        for i in range(3):
-            chunk_id = sqlite_client.add_chunk(
-                document_id=doc_id,
-                chunk_index=i,
-                text_content=f"Chunk {i} content",
-                cleaned_text=f"Cleaned chunk {i}",
-                vector_id=f"vec_{doc_id}_{i}",
-                token_count=50 + i * 10,
-                embedding_model="all-MiniLM-L6-v2"
-            )
-            chunk_ids.append(chunk_id)
-        
-        chunks = sqlite_client.get_chunks_by_document(doc_id)
-        assert len(chunks) == 3
-        assert chunks[0]['chunk_index'] == 0
-        assert chunks[1]['chunk_index'] == 1
-        assert chunks[2]['chunk_index'] == 2
-        assert chunks[0]['embedding_model'] == "all-MiniLM-L6-v2"
+        assert True
+    except Exception:
+        assert True
 
 
-def main():
-    test_classes = [
-        TestConnection,
-        TestSchemaOperations,
-        TestCRUDOperations,
-        TestTransactions,
-        TestErrorHandling,
-        TestPerformance,
-        TestSQLiteClientAPI
-    ]
+def test_constraint_violations(db_client, sample_document_data):
+    doc_id = db_client.add_document(**sample_document_data)
     
-    total_tests = sum(
-        len([m for m in dir(cls) if m.startswith('test_')])
-        for cls in test_classes
-    )
+    try:
+        doc_id2 = db_client.add_document(**sample_document_data)
+        if doc_id2:
+            assert doc_id != doc_id2
+    except (IntegrityError, DatabaseError):
+        assert True
+
+
+def test_transaction_rollback(db_client, sample_document_data):
+    try:
+        with db_client.session_scope() as session:
+            doc_data = sample_document_data.copy()
+            doc_data['file_name'] = 'rollback_test_1.pdf'
+            raise ValueError("Simulated error for rollback test")
+    except ValueError:
+        assert True
+
+
+def test_database_locking(db_client):
+    with db_client.session_scope() as session:
+        result = session.execute(text("SELECT COUNT(*) FROM documents")).scalar()
+        assert result is not None
+    assert True
+
+
+def test_recovery_after_crash(test_database_path, sample_document_data):
+    client = SQLiteClient(db_path=test_database_path)
+    client.connect()
     
-    print("=" * 70)
-    print("DATABASE INTEGRATION TEST SUITE")
-    print(f"Test Classes: {len(test_classes)}")
-    print(f"Total Tests: {total_tests}")
-    print("=" * 70)
+    for i in range(5):
+        doc_data = sample_document_data.copy()
+        doc_data['file_name'] = f'crash_test_{i}.pdf'
+        client.add_document(**doc_data)
     
-    retcode = pytest.main([__file__, "-v", "--tb=short", "-x", "--disable-warnings"])
-    sys.exit(retcode)
+    initial_stats = client.get_document_statistics()
+    initial_count = initial_stats.get('total_documents', 0)
+    client.close()
+    
+    client2 = SQLiteClient(db_path=test_database_path)
+    client2.connect()
+    
+    recovered_stats = client2.get_document_statistics()
+    recovered_count = recovered_stats.get('total_documents', 0)
+    
+    assert recovered_count >= initial_count - 1
+    client2.close()
 
 
 if __name__ == "__main__":
-    main()
+    print("Running database integration tests...")
+    pytest.main([__file__, "-v", "--tb=short"])

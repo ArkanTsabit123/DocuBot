@@ -3,37 +3,161 @@
 """
 DocuBot Custom Exceptions and Error Handling System
 Provides error handling, classification, and recovery mechanisms.
+
+Version: 2.0
+Author: DocuBot Team
 """
 
 import logging
 import sys
 import uuid
 import socket
-from typing import Dict, Any, Optional, Callable, TypeVar, Union
+import traceback
+from typing import Dict, Any, Optional, Callable, TypeVar, Union, Tuple, List
 from pathlib import Path
 from datetime import datetime
+from contextlib import contextmanager
 
 T = TypeVar('T')
 R = TypeVar('R')
+
+__all__ = [
+    # Error Codes
+    'ErrorCodes',
+    
+    # Base Exception
+    'DocuBotError',
+    
+    # Configuration & Validation
+    'ConfigurationError',
+    'ValidationError',
+    
+    # Document Processing
+    'DocumentError',
+    'ExtractionError',
+    'UnsupportedFormatError',
+    'ProcessingError',
+    'ChunkingError',
+    
+    # Database & Storage
+    'DatabaseError',
+    'VectorStoreError',
+    
+    # Database Exceptions
+    'DatabaseException',
+    'DatabaseConnectionError',
+    'DatabaseQueryError',
+    'DatabaseConstraintError',
+    
+    # AI & ML
+    'AIError',
+    'LLMError',
+    'EmbeddingError',
+    'RAGError',
+    'ModelManagementError',
+    'RateLimitError',
+    'ContextLengthError',
+    
+    # UI & Resources
+    'UIError',
+    'ResourceError',
+    
+    # Network & Connection
+    'ConnectionError',
+    'NetworkError',
+    'TimeoutError',
+    'ServiceUnavailableError',
+    
+    # Authentication & Permission
+    'AuthenticationError',
+    'PermissionError',
+    
+    # Model Management
+    'ModelError',
+    'ModelDownloadError',
+    'ModelLoadError',
+    'ModelNotFoundError',
+    
+    # Diagnostic
+    'DiagnosticError',
+    
+    # File & I/O
+    'FileSystemError',
+    'FileNotFoundError',
+    'FileIOError',
+    
+    # Utility Functions
+    'handle_error',
+    'safe_execute',
+    'graceful_execute',
+    'setup_error_logging',
+    'log_error_with_context',
+    
+    # Classes
+    'ErrorContext',
+    'GracefulDegradation',
+    'FallbackRegistry',
+    'ConfigurationValidator',
+    'ErrorRecovery',
+    'ErrorMetrics',
+    'ErrorClassifier',
+    'ErrorReporter',
+    'ErrorSafeContext',
+    
+    # Helper Functions
+    'handle_batch_errors',
+    'test_exception_system',
+]
 
 
 class ErrorCodes:
     """Standardized error codes for consistent error reporting."""
     
+    # Generic (000-099)
     GENERIC = "DB_ERROR_000"
+    UNKNOWN = "DB_ERROR_001"
     
+    # Configuration & Settings (100-199)
     CONFIGURATION = "DB_ERROR_100"
+    SETTINGS = "DB_ERROR_101"
     
+    # Connection & Network (120-149)
+    CONNECTION = "DB_ERROR_120"
+    NETWORK = "DB_ERROR_121"
+    TIMEOUT = "DB_ERROR_122"
+    SERVICE_UNAVAILABLE = "DB_ERROR_123"
+    
+    # Permission & Security (130-139)
+    PERMISSION = "DB_ERROR_130"
+    AUTHENTICATION = "DB_ERROR_131"
+    AUTHORIZATION = "DB_ERROR_132"
+    
+    # Document Processing (200-299)
     DOCUMENT = "DB_ERROR_200"
     EXTRACTION = "DB_ERROR_210"
     UNSUPPORTED_FORMAT = "DB_ERROR_211"
     PROCESSING = "DB_ERROR_220"
     CHUNKING = "DB_ERROR_221"
+    CLEANING = "DB_ERROR_222"
     
+    # Database (300-399)
     DATABASE = "DB_ERROR_300"
+    QUERY = "DB_ERROR_310"
+    CONNECTION_POOL = "DB_ERROR_311"
+    MIGRATION = "DB_ERROR_320"
     
+    # Database Exceptions (330-349)
+    DATABASE_EXCEPTION = "DB_ERROR_330"
+    DATABASE_CONNECTION = "DB_ERROR_331"
+    DATABASE_QUERY = "DB_ERROR_332"
+    DATABASE_CONSTRAINT = "DB_ERROR_333"
+    
+    # Vector Store (400-499)
     VECTOR_STORE = "DB_ERROR_400"
+    INDEX = "DB_ERROR_410"
+    EMBEDDING_STORE = "DB_ERROR_420"
     
+    # AI & ML (500-599)
     AI = "DB_ERROR_500"
     LLM = "DB_ERROR_510"
     EMBEDDING = "DB_ERROR_520"
@@ -41,21 +165,42 @@ class ErrorCodes:
     MODEL_MANAGEMENT = "DB_ERROR_540"
     RATE_LIMIT = "DB_ERROR_511"
     CONTEXT_LENGTH = "DB_ERROR_512"
+    TEMPERATURE = "DB_ERROR_513"
     
+    # UI & UX (600-699)
     UI = "DB_ERROR_600"
+    RENDERING = "DB_ERROR_610"
+    THEME = "DB_ERROR_620"
+    LAYOUT = "DB_ERROR_630"
     
+    # Validation (700-799)
     VALIDATION = "DB_ERROR_700"
+    INPUT_VALIDATION = "DB_ERROR_710"
+    DATA_VALIDATION = "DB_ERROR_720"
     
+    # Resources (800-899)
     RESOURCE = "DB_ERROR_800"
+    MEMORY = "DB_ERROR_810"
+    DISK_SPACE = "DB_ERROR_820"
+    GPU = "DB_ERROR_830"
+    CPU = "DB_ERROR_840"
     
+    # Diagnostic (900-999)
     DIAGNOSTIC = "DB_ERROR_900"
+    HEALTH_CHECK = "DB_ERROR_910"
     
-    AUTHENTICATION = "DB_ERROR_1000"
-    
+    # Model Management (1100-1199)
     MODEL = "DB_ERROR_1100"
     MODEL_DOWNLOAD = "DB_ERROR_1110"
     MODEL_LOAD = "DB_ERROR_1120"
     MODEL_NOT_FOUND = "DB_ERROR_1130"
+    MODEL_COMPATIBILITY = "DB_ERROR_1140"
+    
+    # File & I/O (1500-1599)
+    FILE_SYSTEM = "DB_ERROR_1500"
+    FILE_NOT_FOUND = "DB_ERROR_1510"
+    FILE_IO = "DB_ERROR_1520"
+    FILE_PERMISSION = "DB_ERROR_1530"
 
 
 class DocuBotError(Exception):
@@ -66,7 +211,12 @@ class DocuBotError(Exception):
         self.context = context or {}
         self.timestamp = datetime.now().isoformat()
         self.error_code = ErrorCodes.GENERIC
-
+        self._traceback = traceback.format_exc()
+    
+    def __str__(self) -> str:
+        """String representation with error code."""
+        return f"[{self.error_code}] {super().__str__()}"
+    
     def to_dict(self) -> Dict[str, Any]:
         """Convert exception to dictionary for serialization."""
         return {
@@ -74,9 +224,31 @@ class DocuBotError(Exception):
             'error_message': str(self),
             'error_code': self.error_code,
             'context': self.context,
-            'timestamp': self.timestamp
+            'timestamp': self.timestamp,
+            'traceback': self._traceback
         }
+    
+    def get_debug_info(self) -> Dict[str, Any]:
+        """Get debug information for troubleshooting."""
+        return {
+            'error_type': self.__class__.__name__,
+            'message': str(self),
+            'error_code': self.error_code,
+            'context': self.context,
+            'timestamp': self.timestamp,
+            'traceback': self._traceback,
+            'python_version': sys.version,
+            'platform': sys.platform
+        }
+    
+    def format_for_user(self) -> str:
+        """Format error message for end-user display."""
+        return str(self)
 
+
+# ============================================================================
+# CONFIGURATION & VALIDATION ERRORS
+# ============================================================================
 
 class ConfigurationError(DocuBotError):
     """Raised when configuration is invalid or missing."""
@@ -86,6 +258,24 @@ class ConfigurationError(DocuBotError):
         super().__init__(message, context)
         self.error_code = ErrorCodes.CONFIGURATION
 
+
+class ValidationError(DocuBotError):
+    """Raised when validation fails."""
+    
+    def __init__(self, message: str, field: Optional[str] = None,
+                 value: Optional[Any] = None):
+        context = {}
+        if field:
+            context['field'] = field
+        if value:
+            context['value'] = str(value)[:200]
+        super().__init__(message, context)
+        self.error_code = ErrorCodes.VALIDATION
+
+
+# ============================================================================
+# DOCUMENT PROCESSING ERRORS
+# ============================================================================
 
 class DocumentError(DocuBotError):
     """Base exception for document-related errors."""
@@ -120,6 +310,9 @@ class UnsupportedFormatError(ExtractionError):
             context['file_path'] = file_path
         super().__init__(message, file_path, format_type)
         self.error_code = ErrorCodes.UNSUPPORTED_FORMAT
+    
+    def format_for_user(self) -> str:
+        return f"Format dokumen tidak didukung: {self.context.get('format_type', 'unknown')}"
 
 
 class ProcessingError(DocumentError):
@@ -144,6 +337,10 @@ class ChunkingError(ProcessingError):
         self.error_code = ErrorCodes.CHUNKING
 
 
+# ============================================================================
+# DATABASE & STORAGE ERRORS
+# ============================================================================
+
 class DatabaseError(DocuBotError):
     """Raised when database operations fail."""
     
@@ -153,9 +350,72 @@ class DatabaseError(DocuBotError):
         if operation:
             context['operation'] = operation
         if query:
-            context['query'] = query
+            context['query'] = query[:500]
         super().__init__(message, context)
         self.error_code = ErrorCodes.DATABASE
+
+
+class DatabaseException(DocuBotError):
+    """Base exception class for specific database-related errors."""
+    
+    def __init__(self, message: str, context: Optional[Dict[str, Any]] = None):
+        super().__init__(message, context)
+        self.error_code = ErrorCodes.DATABASE_EXCEPTION
+
+
+class DatabaseConnectionError(DatabaseException):
+    """Exception raised when database connection fails."""
+    
+    def __init__(self, message: str, host: Optional[str] = None, 
+                 port: Optional[int] = None, database: Optional[str] = None):
+        context = {}
+        if host:
+            context['host'] = host
+        if port:
+            context['port'] = port
+        if database:
+            context['database'] = database
+        super().__init__(message, context)
+        self.error_code = ErrorCodes.DATABASE_CONNECTION
+    
+    def format_for_user(self) -> str:
+        return "Koneksi database gagal. Periksa pengaturan database Anda."
+
+
+class DatabaseQueryError(DatabaseException):
+    """Exception raised when database query fails."""
+    
+    def __init__(self, message: str, query: Optional[str] = None, 
+                 parameters: Optional[Dict[str, Any]] = None):
+        context = {}
+        if query:
+            context['query'] = query[:500]
+        if parameters:
+            context['parameters'] = str(parameters)[:200]
+        super().__init__(message, context)
+        self.error_code = ErrorCodes.DATABASE_QUERY
+    
+    def format_for_user(self) -> str:
+        return "Operasi query database gagal. Periksa sintaks query dan parameter."
+
+
+class DatabaseConstraintError(DatabaseException):
+    """Exception raised when database constraint is violated."""
+    
+    def __init__(self, message: str, constraint_name: Optional[str] = None,
+                 table_name: Optional[str] = None, column_name: Optional[str] = None):
+        context = {}
+        if constraint_name:
+            context['constraint_name'] = constraint_name
+        if table_name:
+            context['table_name'] = table_name
+        if column_name:
+            context['column_name'] = column_name
+        super().__init__(message, context)
+        self.error_code = ErrorCodes.DATABASE_CONSTRAINT
+    
+    def format_for_user(self) -> str:
+        return "Pelanggaran constraint database. Data tidak memenuhi aturan integritas."
 
 
 class VectorStoreError(DocuBotError):
@@ -166,6 +426,10 @@ class VectorStoreError(DocuBotError):
         super().__init__(message, context)
         self.error_code = ErrorCodes.VECTOR_STORE
 
+
+# ============================================================================
+# AI & ML ERRORS
+# ============================================================================
 
 class AIError(DocuBotError):
     """Base exception for AI-related errors."""
@@ -185,9 +449,12 @@ class LLMError(AIError):
         if model:
             context['model'] = model
         if prompt:
-            context['prompt'] = prompt
+            context['prompt'] = prompt[:200]
         super().__init__(message, context)
         self.error_code = ErrorCodes.LLM
+    
+    def format_for_user(self) -> str:
+        return "Gagal memproses permintaan AI. Silakan coba lagi."
 
 
 class EmbeddingError(AIError):
@@ -261,7 +528,14 @@ class ContextLengthError(LLMError):
             context['max_length'] = max_length
         super().__init__(message, context)
         self.error_code = ErrorCodes.CONTEXT_LENGTH
+    
+    def format_for_user(self) -> str:
+        return "Teks terlalu panjang. Silakan perpendek teks Anda."
 
+
+# ============================================================================
+# UI & RESOURCE ERRORS
+# ============================================================================
 
 class UIError(DocuBotError):
     """Raised when UI operations fail."""
@@ -270,20 +544,6 @@ class UIError(DocuBotError):
         context = {"component": component} if component else {}
         super().__init__(message, context)
         self.error_code = ErrorCodes.UI
-
-
-class ValidationError(DocuBotError):
-    """Raised when validation fails."""
-    
-    def __init__(self, message: str, field: Optional[str] = None,
-                 value: Optional[Any] = None):
-        context = {}
-        if field:
-            context['field'] = field
-        if value:
-            context['value'] = value
-        super().__init__(message, context)
-        self.error_code = ErrorCodes.VALIDATION
 
 
 class ResourceError(DocuBotError):
@@ -295,12 +555,72 @@ class ResourceError(DocuBotError):
         if resource_type:
             context['resource_type'] = resource_type
         if required:
-            context['required'] = required
+            context['required'] = str(required)
         if available:
-            context['available'] = available
+            context['available'] = str(available)
         super().__init__(message, context)
         self.error_code = ErrorCodes.RESOURCE
 
+
+# ============================================================================
+# NETWORK & CONNECTION ERRORS
+# ============================================================================
+
+class ConnectionError(DocuBotError):
+    """Raised when connection to external service fails."""
+    
+    def __init__(self, message: str, service: Optional[str] = None, 
+                 endpoint: Optional[str] = None):
+        context = {}
+        if service:
+            context['service'] = service
+        if endpoint:
+            context['endpoint'] = endpoint
+        super().__init__(message, context)
+        self.error_code = ErrorCodes.CONNECTION
+    
+    def format_for_user(self) -> str:
+        return "Koneksi gagal. Periksa koneksi jaringan Anda."
+
+
+class NetworkError(ConnectionError):
+    """Raised for general network failures."""
+    
+    def __init__(self, message: str, service: Optional[str] = None):
+        super().__init__(message, service, None)
+        self.error_code = ErrorCodes.NETWORK
+
+
+class TimeoutError(ConnectionError):
+    """Raised when an operation times out."""
+    
+    def __init__(self, message: str, service: Optional[str] = None,
+                 timeout_seconds: Optional[float] = None):
+        context = {"service": service} if service else {}
+        if timeout_seconds:
+            context['timeout_seconds'] = timeout_seconds
+        super().__init__(message, context)
+        self.error_code = ErrorCodes.TIMEOUT
+    
+    def format_for_user(self) -> str:
+        return "Operasi timeout. Silakan coba lagi."
+
+
+class ServiceUnavailableError(ConnectionError):
+    """Raised when a service is unavailable."""
+    
+    def __init__(self, message: str, service: Optional[str] = None):
+        context = {"service": service} if service else {}
+        super().__init__(message, context)
+        self.error_code = ErrorCodes.SERVICE_UNAVAILABLE
+    
+    def format_for_user(self) -> str:
+        return "Layanan tidak tersedia. Silakan coba lagi nanti."
+
+
+# ============================================================================
+# AUTHENTICATION & PERMISSION ERRORS
+# ============================================================================
 
 class AuthenticationError(DocuBotError):
     """Raised when authentication fails."""
@@ -309,21 +629,26 @@ class AuthenticationError(DocuBotError):
         context = {"resource": resource} if resource else {}
         super().__init__(message, context)
         self.error_code = ErrorCodes.AUTHENTICATION
-
-
-class DiagnosticError(DocuBotError):
-    """Raised when diagnostic checks fail."""
     
-    def __init__(self, message: str, check_name: Optional[str] = None,
-                 details: Optional[Dict[str, Any]] = None):
-        context = {}
-        if check_name:
-            context['check_name'] = check_name
-        if details:
-            context.update(details)
-        super().__init__(message, context)
-        self.error_code = ErrorCodes.DIAGNOSTIC
+    def format_for_user(self) -> str:
+        return "Autentikasi gagal. Periksa kredensial Anda."
 
+
+class PermissionError(DocuBotError):
+    """Raised when permission is denied."""
+    
+    def __init__(self, message: str, resource: Optional[str] = None):
+        context = {"resource": resource} if resource else {}
+        super().__init__(message, context)
+        self.error_code = ErrorCodes.PERMISSION
+    
+    def format_for_user(self) -> str:
+        return "Izin ditolak. Periksa hak akses Anda."
+
+
+# ============================================================================
+# MODEL MANAGEMENT ERRORS
+# ============================================================================
 
 class ModelError(DocuBotError):
     """Base exception for model-related errors."""
@@ -353,6 +678,9 @@ class ModelDownloadError(ModelError):
             context['http_status'] = http_status
         super().__init__(message, model_name=model_name, model_path=None)
         self.error_code = ErrorCodes.MODEL_DOWNLOAD
+    
+    def format_for_user(self) -> str:
+        return "Download model gagal. Periksa koneksi internet Anda."
 
 
 class ModelLoadError(ModelError):
@@ -375,31 +703,83 @@ class ModelNotFoundError(ModelError):
     """Raised when requested model is not found."""
     
     def __init__(self, message: str, model_name: Optional[str] = None,
-                 model_path: Optional[str] = None, search_paths: Optional[list] = None):
+                 model_path: Optional[str] = None, search_paths: Optional[List[str]] = None):
         context = {}
         if model_name:
             context['model_name'] = model_name
         if model_path:
             context['model_path'] = model_path
         if search_paths:
-            context['search_paths'] = search_paths
+            context['search_paths'] = search_paths[:5]
         super().__init__(message, model_name=model_name, model_path=model_path)
         self.error_code = ErrorCodes.MODEL_NOT_FOUND
-
-
-class ConnectionError(DocuBotError):
-    """Raised when connection to external service fails."""
     
-    def __init__(self, message: str, service: Optional[str] = None, 
-                 endpoint: Optional[str] = None):
-        context = {}
-        if service:
-            context['service'] = service
-        if endpoint:
-            context['endpoint'] = endpoint
-        super().__init__(message, context)
-        self.error_code = ErrorCodes.AI
+    def format_for_user(self) -> str:
+        return "Model tidak ditemukan. Silakan instal model yang diperlukan."
 
+
+# ============================================================================
+# DIAGNOSTIC ERRORS
+# ============================================================================
+
+class DiagnosticError(DocuBotError):
+    """Raised when diagnostic checks fail."""
+    
+    def __init__(self, message: str, check_name: Optional[str] = None,
+                 details: Optional[Dict[str, Any]] = None):
+        context = {}
+        if check_name:
+            context['check_name'] = check_name
+        if details:
+            context.update(details)
+        super().__init__(message, context)
+        self.error_code = ErrorCodes.DIAGNOSTIC
+
+
+# ============================================================================
+# FILE & I/O ERRORS
+# ============================================================================
+
+class FileSystemError(DocuBotError):
+    """Base exception for file system operations."""
+    
+    def __init__(self, message: str, file_path: Optional[str] = None):
+        context = {"file_path": file_path} if file_path else {}
+        super().__init__(message, context)
+        self.error_code = ErrorCodes.FILE_SYSTEM
+
+
+class FileNotFoundError(FileSystemError):
+    """Raised when file is not found."""
+    
+    def __init__(self, message: str, file_path: Optional[str] = None):
+        super().__init__(message, file_path)
+        self.error_code = ErrorCodes.FILE_NOT_FOUND
+    
+    def format_for_user(self) -> str:
+        return "File tidak ditemukan. Periksa lokasi file."
+
+
+class FileIOError(FileSystemError):
+    """Raised when file I/O operations fail."""
+    
+    def __init__(self, message: str, file_path: Optional[str] = None,
+                 operation: Optional[str] = None):
+        context = {}
+        if file_path:
+            context['file_path'] = file_path
+        if operation:
+            context['operation'] = operation
+        super().__init__(message, context)
+        self.error_code = ErrorCodes.FILE_IO
+    
+    def format_for_user(self) -> str:
+        return "Operasi file gagal. Periksa file dan izin akses."
+
+
+# ============================================================================
+# ERROR HANDLING UTILITIES
+# ============================================================================
 
 def handle_error(error: Exception, context: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Handle an exception and return standardized error information."""
@@ -407,32 +787,35 @@ def handle_error(error: Exception, context: Optional[Dict[str, Any]] = None) -> 
     error_context = context or {}
     
     user_messages = {
-        'FileNotFoundError': "The requested file was not found. Please verify the file path exists.",
-        'PermissionError': "Permission denied. Please check file permissions and access rights.",
-        'UnsupportedFormatError': "The document format is not supported. Please convert to a supported format.",
-        'LLMError': "Unable to generate response from AI model. Please try again or check model availability.",
-        'DatabaseError': "Database operation failed. Please check database connection and integrity.",
-        'ValidationError': "Input validation failed. Please check the provided data.",
-        'ResourceError': "Insufficient system resources. Please check available memory and disk space.",
-        'ConfigurationError': "Configuration error detected. Please verify configuration files.",
-        'DiagnosticError': "System diagnostic check failed. Please run the diagnostic tool for details.",
-        'ValueError': "Invalid value provided. Please check your input.",
-        'TypeError': "Type error occurred. Please check your input types.",
-        'KeyError': "Required key not found. Please check your data structure.",
-        'AttributeError': "Attribute not found. Please check your object structure.",
-        'ImportError': "Module import failed. Please check your installation.",
-        'OSError': "Operating system error occurred. Please check file paths and permissions.",
-        'MemoryError': "Insufficient memory. Please close other applications and try again.",
-        'TimeoutError': "Operation timed out. Please try again or check your connection.",
-        'ConnectionError': "Connection failed. Please check your network connection.",
-        'RuntimeError': "Runtime error occurred. Please try again or contact support.",
-        'AuthenticationError': "Authentication failed. Please check your credentials and permissions.",
-        'RateLimitError': "Rate limit exceeded. Please wait before making additional requests.",
-        'ContextLengthError': "Context length exceeded. Please reduce the input size or use a model with larger context window.",
-        'ModelError': "Model operation failed. Please check model configuration and availability.",
-        'ModelDownloadError': "Model download failed. Please check network connection and model source.",
-        'ModelLoadError': "Model loading failed. Please check model files and compatibility.",
-        'ModelNotFoundError': "Requested model not found. Please verify model name and installation.",
+        'FileNotFoundError': "File tidak ditemukan. Periksa lokasi file.",
+        'PermissionError': "Izin ditolak. Periksa hak akses file.",
+        'UnsupportedFormatError': "Format dokumen tidak didukung. Konversi ke format yang didukung.",
+        'LLMError': "Gagal memproses permintaan AI. Silakan coba lagi.",
+        'DatabaseError': "Operasi database gagal. Periksa koneksi database.",
+        'DatabaseConnectionError': "Koneksi database gagal. Periksa pengaturan koneksi.",
+        'DatabaseQueryError': "Query database gagal. Periksa sintaks query.",
+        'DatabaseConstraintError': "Constraint database dilanggar. Periksa aturan integritas data.",
+        'ValidationError': "Validasi input gagal. Periksa data yang diberikan.",
+        'ResourceError': "Sumber daya sistem tidak cukup. Periksa memori dan ruang disk.",
+        'ConfigurationError': "Error konfigurasi terdeteksi. Periksa file konfigurasi.",
+        'DiagnosticError': "Cek diagnostik sistem gagal. Jalankan alat diagnostik.",
+        'ValueError': "Nilai tidak valid. Periksa input Anda.",
+        'TypeError': "Error tipe data. Periksa tipe data input.",
+        'KeyError': "Key yang diperlukan tidak ditemukan. Periksa struktur data.",
+        'AttributeError': "Atribut tidak ditemukan. Periksa struktur objek.",
+        'ImportError': "Import module gagal. Periksa instalasi Anda.",
+        'OSError': "Error sistem operasi. Periksa path file dan izin.",
+        'MemoryError': "Memori tidak cukup. Tutup aplikasi lain dan coba lagi.",
+        'TimeoutError': "Operasi timeout. Silakan coba lagi atau periksa koneksi.",
+        'ConnectionError': "Koneksi gagal. Periksa koneksi jaringan Anda.",
+        'RuntimeError': "Runtime error terjadi. Silakan coba lagi atau hubungi support.",
+        'AuthenticationError': "Autentikasi gagal. Periksa kredensial dan izin Anda.",
+        'RateLimitError': "Limit rate terlampaui. Tunggu sebelum membuat permintaan tambahan.",
+        'ContextLengthError': "Panjang konteks terlampaui. Perkecil ukuran input.",
+        'ModelError': "Operasi model gagal. Periksa konfigurasi model.",
+        'ModelDownloadError': "Download model gagal. Periksa koneksi internet.",
+        'ModelLoadError': "Loading model gagal. Periksa file model dan kompatibilitas.",
+        'ModelNotFoundError': "Model tidak ditemukan. Verifikasi nama model dan instalasi.",
     }
     
     if isinstance(error, DocuBotError):
@@ -441,7 +824,7 @@ def handle_error(error: Exception, context: Optional[Dict[str, Any]] = None) -> 
             'error_type': error_type,
             'error_code': error.error_code,
             'error_message': str(error),
-            'user_message': user_messages.get(error_type, str(error)),
+            'user_message': error.format_for_user(),
             'context': {**error_context, **error.context},
             'timestamp': error.timestamp,
             'is_docubot_error': True
@@ -452,7 +835,7 @@ def handle_error(error: Exception, context: Optional[Dict[str, Any]] = None) -> 
             'error_type': error_type,
             'error_code': ErrorCodes.GENERIC,
             'error_message': str(error),
-            'user_message': user_messages.get(error_type, "An unexpected error occurred. Please try again."),
+            'user_message': user_messages.get(error_type, "Error tak terduga terjadi. Silakan coba lagi."),
             'context': error_context,
             'timestamp': datetime.now().isoformat(),
             'is_docubot_error': False
@@ -461,7 +844,7 @@ def handle_error(error: Exception, context: Optional[Dict[str, Any]] = None) -> 
     return error_dict
 
 
-def safe_execute(func: Callable[..., T], *args: Any, **kwargs: Any) -> tuple[bool, Union[T, Dict[str, Any]]]:
+def safe_execute(func: Callable[..., T], *args: Any, **kwargs: Any) -> Tuple[bool, Union[T, Dict[str, Any]]]:
     """Execute a function safely, catching any exceptions."""
     try:
         result = func(*args, **kwargs)
@@ -476,6 +859,43 @@ def safe_execute(func: Callable[..., T], *args: Any, **kwargs: Any) -> tuple[boo
         error_result = handle_error(error, error_context)
         return False, error_result
 
+
+def handle_batch_errors(
+    errors: List[Exception],
+    operation: str = "batch_operation"
+) -> Dict[str, Any]:
+    """Handle multiple errors from batch operations."""
+    successful = 0
+    failed = 0
+    error_details = []
+    
+    for error in errors:
+        error_info = handle_error(error, {"batch_operation": operation})
+        error_details.append(error_info)
+        if error_info.get('is_docubot_error', False):
+            failed += 1
+        else:
+            classifier = ErrorClassifier()
+            classification = classifier.classify_error(error)
+            if classification.get('can_retry', False):
+                failed += 1
+            else:
+                failed += 1
+    
+    total = len(errors)
+    return {
+        'total': total,
+        'successful': successful,
+        'failed': failed,
+        'success_rate': (successful / total * 100) if total > 0 else 0,
+        'errors': error_details[:10],
+        'has_more_errors': len(error_details) > 10
+    }
+
+
+# ============================================================================
+# ERROR CONTEXT MANAGER
+# ============================================================================
 
 class ErrorContext:
     """Context manager for error handling within a specific operation."""
@@ -512,6 +932,10 @@ class ErrorContext:
         return False
 
 
+# ============================================================================
+# GRACEFUL DEGRADATION
+# ============================================================================
+
 class GracefulDegradation:
     """Provides fallback strategies for various types of failures."""
     
@@ -536,7 +960,7 @@ class GracefulDegradation:
     @staticmethod
     def fallback_llm_response(error: Exception, query: str, **kwargs) -> Dict[str, Any]:
         return {
-            'answer': f"I apologize, but I'm unable to process your query at the moment. The system encountered an error: {type(error).__name__}",
+            'answer': f"Maaf, saya tidak dapat memproses permintaan Anda saat ini. Sistem mengalami error: {type(error).__name__}",
             'sources': [],
             'confidence': 0.0,
             'degraded_mode': True,
@@ -547,7 +971,8 @@ class GracefulDegradation:
         }
     
     @staticmethod
-    def fallback_embedding(error: Exception, text: str, dimensions: int = 384, **kwargs) -> list[float]:
+    def fallback_embedding(error: Exception, text: str, dimensions: int = 384, **kwargs) -> List[float]:
+        """Return zero vector as fallback embedding."""
         return [0.0] * dimensions
     
     @staticmethod
@@ -599,7 +1024,8 @@ class FallbackRegistry:
         cls._strategies[error_type] = fallback_func
     
     @classmethod
-    def get_fallback(cls, error: Exception):
+    def get_fallback(cls, error: Exception) -> Callable:
+        """Get appropriate fallback function for the error."""
         fallback = cls._strategies.get(type(error))
         if fallback:
             return fallback
@@ -614,9 +1040,14 @@ class FallbackRegistry:
 FallbackRegistry.register(LLMError, GracefulDegradation.fallback_llm_response)
 FallbackRegistry.register(EmbeddingError, GracefulDegradation.fallback_embedding)
 FallbackRegistry.register(DatabaseError, GracefulDegradation.fallback_database_operation)
+FallbackRegistry.register(DatabaseConnectionError, GracefulDegradation.fallback_database_operation)
+FallbackRegistry.register(DatabaseQueryError, GracefulDegradation.fallback_database_operation)
+FallbackRegistry.register(DatabaseConstraintError, GracefulDegradation.fallback_database_operation)
 FallbackRegistry.register(VectorStoreError, GracefulDegradation.fallback_vector_store_operation)
 FallbackRegistry.register(ExtractionError, GracefulDegradation.fallback_document_processing)
 FallbackRegistry.register(ModelError, GracefulDegradation.fallback_model_operation)
+FallbackRegistry.register(ConnectionError, GracefulDegradation.fallback_llm_response)
+FallbackRegistry.register(TimeoutError, GracefulDegradation.fallback_llm_response)
 
 
 def graceful_execute(
@@ -666,11 +1097,16 @@ def graceful_execute(
             }
 
 
+# ============================================================================
+# CONFIGURATION VALIDATION
+# ============================================================================
+
 class ConfigurationValidator:
     """Validates various types of configurations."""
     
     @staticmethod
-    def validate_app_config(config: Dict[str, Any]) -> tuple[bool, list[str]]:
+    def validate_app_config(config: Dict[str, Any]) -> Tuple[bool, List[str]]:
+        """Validate application configuration."""
         if not config:
             return False, ["Configuration is empty"]
         
@@ -680,7 +1116,7 @@ class ConfigurationValidator:
         if missing_keys:
             return False, [f"Missing required section: {key}" for key in missing_keys]
         
-        issues = []
+        issues: List[str] = []
         
         if 'ai' in config:
             ai_config = config['ai']
@@ -710,7 +1146,8 @@ class ConfigurationValidator:
         return len(issues) == 0, issues
     
     @staticmethod
-    def validate_file_path(path: Path) -> tuple[bool, Optional[str]]:
+    def validate_file_path(path: Union[str, Path]) -> Tuple[bool, Optional[str]]:
+        """Validate file path existence and accessibility."""
         if not isinstance(path, Path):
             path = Path(str(path))
         
@@ -730,7 +1167,8 @@ class ConfigurationValidator:
             return False, f"Cannot access file: {error}"
     
     @staticmethod
-    def validate_directory(path: Path) -> tuple[bool, Optional[str]]:
+    def validate_directory(path: Union[str, Path]) -> Tuple[bool, Optional[str]]:
+        """Validate directory existence and write permission."""
         if not isinstance(path, Path):
             path = Path(str(path))
         
@@ -752,11 +1190,12 @@ class ConfigurationValidator:
             return False, f"Cannot write to directory: {error}"
     
     @staticmethod
-    def validate_model_config(config: Dict[str, Any]) -> tuple[bool, list[str]]:
+    def validate_model_config(config: Dict[str, Any]) -> Tuple[bool, List[str]]:
+        """Validate model configuration."""
         if not config:
             return False, ["Model configuration is empty"]
         
-        issues = []
+        issues: List[str] = []
         
         if 'models' not in config:
             issues.append("Missing 'models' section")
@@ -775,6 +1214,10 @@ class ConfigurationValidator:
         
         return len(issues) == 0, issues
 
+
+# ============================================================================
+# LOGGING UTILITIES
+# ============================================================================
 
 def setup_error_logging(log_level: str = "INFO") -> logging.Logger:
     """Configure error logging for the application."""
@@ -820,11 +1263,15 @@ def log_error_with_context(
     log_method(f"Error occurred: {type(error).__name__}", extra=error_info)
 
 
+# ============================================================================
+# ERROR RECOVERY
+# ============================================================================
+
 class ErrorRecovery:
     """Provides recovery strategies for different error types."""
     
     @staticmethod
-    def recover_from_database_error(error: Exception, max_retries: int = 3) -> tuple[bool, str]:
+    def recover_from_database_error(error: Exception, max_retries: int = 3) -> Tuple[bool, str]:
         logger = logging.getLogger(__name__)
         
         error_msg = str(error).lower()
@@ -844,7 +1291,7 @@ class ErrorRecovery:
         return False, "No recovery strategy available for this error type"
     
     @staticmethod
-    def recover_from_resource_error(error: ResourceError) -> tuple[bool, str]:
+    def recover_from_resource_error(error: ResourceError) -> Tuple[bool, str]:
         resource_type = error.context.get('resource_type', 'unknown')
         
         if resource_type == 'memory':
@@ -859,7 +1306,7 @@ class ErrorRecovery:
         return False, "No recovery strategy available"
     
     @staticmethod
-    def recover_from_model_error(error: ModelError) -> tuple[bool, str]:
+    def recover_from_model_error(error: ModelError) -> Tuple[bool, str]:
         if isinstance(error, ModelNotFoundError):
             return True, "Attempting to download missing model"
         elif isinstance(error, ModelDownloadError):
@@ -871,6 +1318,7 @@ class ErrorRecovery:
     
     @staticmethod
     def should_retry(error: Exception, attempt: int, max_attempts: int = 3) -> bool:
+        """Determine if an operation should be retried."""
         if attempt >= max_attempts:
             return False
         
@@ -882,14 +1330,13 @@ class ErrorRecovery:
             'SyntaxError',
             'AttributeError',
             'TypeError',
-            'KeyError'
+            'KeyError',
+            'PermissionError',
+            'FileNotFoundError'
         ]
         
         error_type = type(error).__name__
         if error_type in no_retry_errors:
-            return False
-        
-        if isinstance(error, PermissionError):
             return False
         
         error_msg = str(error).lower()
@@ -902,12 +1349,20 @@ class ErrorRecovery:
         if isinstance(error, ModelNotFoundError) and attempt < 2:
             return True
         
+        if isinstance(error, (ConnectionError, TimeoutError, NetworkError)):
+            return True
+        
         return True
     
     @staticmethod
     def get_retry_delay(attempt: int, base_delay: float = 1.0) -> float:
+        """Calculate exponential backoff delay."""
         return base_delay * (2 ** (attempt - 1))
 
+
+# ============================================================================
+# ERROR METRICS
+# ============================================================================
 
 class ErrorMetrics:
     """Collects and analyzes error metrics."""
@@ -919,16 +1374,19 @@ class ErrorMetrics:
         self.recovery_successes = 0
         
     def record_error(self, error: Exception) -> None:
+        """Record an error occurrence."""
         error_type = type(error).__name__
         self.error_counts[error_type] = self.error_counts.get(error_type, 0) + 1
         self.error_timestamps.append(datetime.now().isoformat())
     
     def record_recovery(self, success: bool) -> None:
+        """Record a recovery attempt."""
         self.recovery_attempts += 1
         if success:
             self.recovery_successes += 1
     
     def get_error_stats(self) -> Dict[str, Any]:
+        """Get error statistics."""
         total_errors = sum(self.error_counts.values())
         
         return {
@@ -944,6 +1402,7 @@ class ErrorMetrics:
         }
     
     def get_error_frequency(self, window_minutes: int = 60) -> float:
+        """Calculate error frequency in errors per minute."""
         if not self.error_timestamps:
             return 0.0
         
@@ -961,11 +1420,16 @@ class ErrorMetrics:
         return recent_errors / window_minutes if window_minutes > 0 else 0.0
 
 
+# ============================================================================
+# ERROR CLASSIFICATION
+# ============================================================================
+
 class ErrorClassifier:
     """Classifies errors for appropriate handling strategies."""
     
     @staticmethod
-    def classify_error(error: Exception) -> Dict[str, bool]:
+    def classify_error(error: Exception) -> Dict[str, Any]:
+        """Classify an error for handling strategy."""
         error_type = type(error).__name__
         error_msg = str(error).lower()
         
@@ -1032,42 +1496,70 @@ class ErrorClassifier:
                 classification['requires_user_intervention'] = True
                 classification['can_retry'] = False
         
+        elif isinstance(error, DatabaseException):
+            classification['is_system_error'] = True
+            classification['severity'] = 'high'
+            if isinstance(error, DatabaseConnectionError):
+                classification['is_temporary'] = True
+                classification['can_retry'] = True
+            elif isinstance(error, DatabaseQueryError):
+                classification['requires_user_intervention'] = True
+                classification['can_retry'] = False
+            elif isinstance(error, DatabaseConstraintError):
+                classification['is_user_error'] = True
+                classification['can_retry'] = False
+        
         return classification
     
     @staticmethod
     def get_recommended_action(error: Exception) -> str:
+        """Get recommended action for an error."""
         classification = ErrorClassifier.classify_error(error)
         
         if classification['is_connection_error']:
-            return "Check your network connection and try again"
+            return "Periksa koneksi jaringan Anda dan coba lagi"
         elif classification['is_resource_error']:
-            return "Free up system resources (memory/disk) and try again"
+            return "Bebaskan sumber daya sistem (memori/disk) dan coba lagi"
         elif classification['is_configuration_error']:
-            return "Check and update your configuration settings"
+            return "Periksa dan perbarui pengaturan konfigurasi Anda"
         elif classification['is_user_error']:
-            return "Check your input and try again with valid data"
+            return "Periksa input Anda dan coba lagi dengan data yang valid"
         elif classification['requires_user_intervention']:
-            return "Manual intervention required. Please contact support if problem persists"
+            return "Intervensi manual diperlukan. Hubungi support jika masalah berlanjut"
         elif classification['can_retry']:
-            return "Temporary issue. Please try again in a few moments"
+            return "Masalah sementara. Silakan coba lagi dalam beberapa saat"
         elif isinstance(error, ModelError):
             if isinstance(error, ModelNotFoundError):
-                return "Model not found. Please install the required model or check model configuration"
+                return "Model tidak ditemukan. Silakan instal model yang diperlukan atau periksa konfigurasi model"
             elif isinstance(error, ModelDownloadError):
-                return "Model download failed. Please check your internet connection and try again"
+                return "Download model gagal. Periksa koneksi internet Anda dan coba lagi"
             elif isinstance(error, ModelLoadError):
-                return "Model loading failed. Please check model compatibility and file integrity"
+                return "Loading model gagal. Periksa kompatibilitas dan integritas file model"
             else:
-                return "Model error occurred. Please check model configuration and try again"
+                return "Error model terjadi. Periksa konfigurasi model dan coba lagi"
+        elif isinstance(error, DatabaseException):
+            if isinstance(error, DatabaseConnectionError):
+                return "Koneksi database gagal. Periksa pengaturan koneksi dan status server database"
+            elif isinstance(error, DatabaseQueryError):
+                return "Query database gagal. Periksa sintaks query dan parameter yang diberikan"
+            elif isinstance(error, DatabaseConstraintError):
+                return "Constraint database dilanggar. Periksa aturan integritas data Anda"
+            else:
+                return "Error database terjadi. Periksa log database untuk detail lebih lanjut"
         else:
-            return "Please try again or contact support if the problem persists"
+            return "Silakan coba lagi atau hubungi support jika masalah berlanjut"
 
+
+# ============================================================================
+# ERROR REPORTING
+# ============================================================================
 
 class ErrorReporter:
     """Reports errors to external monitoring services."""
     
     @staticmethod
-    def report_to_sentry(error: Exception, context: Dict[str, Any]):
+    def report_to_sentry(error: Exception, context: Dict[str, Any]) -> None:
+        """Report error to Sentry.io."""
         try:
             import sentry_sdk
             with sentry_sdk.push_scope() as scope:
@@ -1079,12 +1571,13 @@ class ErrorReporter:
     
     @staticmethod
     def create_error_report(error_info: Dict[str, Any]) -> Dict[str, Any]:
+        """Create a comprehensive error report."""
         return {
             "error_id": str(uuid.uuid4()),
             "timestamp": datetime.now().isoformat(),
             "application": "DocuBot",
             "version": "1.0.0",
-            "environment": "production",
+            "environment": "development",
             "error_details": error_info,
             "system_info": {
                 "python_version": sys.version,
@@ -1094,118 +1587,170 @@ class ErrorReporter:
         }
 
 
-def test_exception_system():
+# ============================================================================
+# ERROR SAFE CONTEXT
+# ============================================================================
+
+class ErrorSafeContext:
+    """Context manager that ensures cleanup even on errors."""
+    
+    def __init__(self, cleanup_funcs: Optional[List[Tuple[Callable, tuple, dict]]] = None):
+        self.cleanup_funcs = cleanup_funcs or []
+        self.cleanup_executed = False
+    
+    def add_cleanup(self, func: Callable, *args, **kwargs) -> None:
+        """Add a cleanup function to be executed on exit."""
+        self.cleanup_funcs.append((func, args, kwargs))
+    
+    def __enter__(self):
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if not self.cleanup_executed:
+            self._execute_cleanup()
+            self.cleanup_executed = True
+        
+        if exc_val:
+            error_info = handle_error(exc_val)
+            logger = logging.getLogger(__name__)
+            log_error_with_context(logger, exc_val)
+            
+            if isinstance(exc_val, (KeyboardInterrupt, SystemExit)):
+                return False
+            return True
+        
+        return False
+    
+    def _execute_cleanup(self) -> None:
+        """Execute all registered cleanup functions."""
+        for func, args, kwargs in self.cleanup_funcs:
+            try:
+                func(*args, **kwargs)
+            except Exception as e:
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Cleanup function failed: {e}")
+
+
+@contextmanager
+def error_safe_context(*cleanup_funcs: Callable):
+    """Context manager for safe execution with cleanup."""
+    context = ErrorSafeContext()
+    for func in cleanup_funcs:
+        context.add_cleanup(func)
+    
+    try:
+        yield context
+    finally:
+        if not context.cleanup_executed:
+            context._execute_cleanup()
+
+
+# ============================================================================
+# TEST FUNCTION
+# ============================================================================
+
+def test_exception_system() -> None:
     """Test the exception system functionality."""
-    test_logger = setup_error_logging("DEBUG")
+    import logging
+    logging.basicConfig(level=logging.DEBUG, format='%(message)s')
+    test_logger = logging.getLogger("test_exceptions")
     
+    print("\n" + "=" * 60)
     print("Testing DocuBot Exception System")
-    print("=" * 50)
+    print("=" * 60)
     
-    print("1. Testing custom exceptions:")
-    try:
-        test_exception = UnsupportedFormatError("xyz", "/path/to/file.xyz")
-        print(f"   Exception created: {test_exception}")
-        print(f"   Error code: {test_exception.error_code}")
-        print(f"   Context: {test_exception.context}")
-        print(f"   Message: {str(test_exception)}")
-    except Exception as e:
-        print(f"   Exception creation failed: {e}")
-        import traceback
-        traceback.print_exc()
+    print("\n1. Testing all exception types:")
+    test_cases = [
+        (ConfigurationError, ["Missing config"], {"config_key": "api_key"}),
+        (UnsupportedFormatError, ["xyz", "/test/file.xyz"], {}),
+        (LLMError, ["Model failed"], {"model": "llama2", "prompt": "test"}),
+        (ModelNotFoundError, ["Model missing"], {"model_name": "test-model"}),
+        (DatabaseError, ["Query failed"], {"operation": "SELECT", "query": "SELECT * FROM users"}),
+        (DatabaseConnectionError, ["Connection failed"], {"host": "localhost", "port": 5432}),
+        (DatabaseQueryError, ["Query syntax error"], {"query": "SELECT FROM table"}),
+        (DatabaseConstraintError, ["Unique constraint violated"], {"constraint_name": "unique_email"}),
+        (ConnectionError, ["Connection refused"], {"service": "database"}),
+        (PermissionError, ["Access denied"], {"resource": "/secure/file"}),
+        (FileNotFoundError, ["File not found"], {"file_path": "/nonexistent/file.txt"}),
+    ]
     
-    print("2. Testing new model exceptions:")
-    try:
-        model_exception = ModelNotFoundError(
-            "Model 'bert-base-uncased' not found",
-            model_name="bert-base-uncased",
-            search_paths=["/models", "/usr/share/models"]
-        )
-        print(f"   Model exception created: {model_exception}")
-        print(f"   Error code: {model_exception.error_code}")
-        print(f"   Context: {model_exception.context}")
-    except Exception as e:
-        print(f"   Model exception creation failed: {e}")
-        import traceback
-        traceback.print_exc()
+    for exc_class, args, kwargs in test_cases:
+        try:
+            exc = exc_class(*args, **kwargs)
+            print(f"   ✓ {exc_class.__name__}: {exc.error_code}")
+            print(f"      User message: {exc.format_for_user()}")
+        except Exception as e:
+            print(f"   ✗ {exc_class.__name__} failed: {e}")
     
-    print("3. Testing error handling:")
+    print("\n2. Testing error handling:")
     try:
         success, result = safe_execute(lambda x: 1 / x, 0)
-        print(f"   Error handling worked: success={success}")
-        print(f"   Error result type: {type(result)}")
-        print(f"   Error keys: {list(result.keys()) if isinstance(result, dict) else 'N/A'}")
+        print(f"   ✓ Error handling worked: success={success}")
+        if isinstance(result, dict):
+            print(f"   Error code: {result.get('error_code')}")
+            print(f"   User message: {result.get('user_message')}")
     except Exception as e:
-        print(f"   Error handling failed: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"   ✗ Error handling failed: {e}")
     
-    print("4. Testing graceful degradation:")
+    print("\n3. Testing graceful degradation:")
     try:
         def failing_function():
-            raise ValueError("This function always fails")
+            raise LLMError("LLM service unavailable", model="llama2")
         
         result = graceful_execute(
             failing_function,
             GracefulDegradation.fallback_llm_response,
             "test query"
         )
-        print(f"   Graceful execution result type: {type(result)}")
+        print(f"   ✓ Graceful execution successful")
         print(f"   Fallback used: {result.get('fallback_used', 'unknown')}")
-        print(f"   Degraded mode: {result.get('degraded_mode', 'unknown')}")
+        print(f"   Answer: {result.get('answer', 'N/A')[:50]}...")
     except Exception as e:
-        print(f"   Graceful degradation failed: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"   ✗ Graceful degradation failed: {e}")
     
-    print("5. Testing validation:")
+    print("\n4. Testing error classification:")
+    try:
+        classifier = ErrorClassifier()
+        test_error = ConnectionError("Connection refused", service="database")
+        classification = classifier.classify_error(test_error)
+        print(f"   ✓ Error classification successful")
+        print(f"   Is connection error: {classification.get('is_connection_error')}")
+        print(f"   Can retry: {classification.get('can_retry')}")
+        print(f"   Recommended action: {classifier.get_recommended_action(test_error)}")
+    except Exception as e:
+        print(f"   ✗ Error classification failed: {e}")
+    
+    print("\n5. Testing validation:")
     try:
         validator = ConfigurationValidator()
         
         import tempfile
         with tempfile.NamedTemporaryFile() as tmp:
             valid, message = validator.validate_file_path(Path(tmp.name))
-            print(f"   File validation: {valid} - {message or 'OK'}")
+            print(f"   ✓ File validation: {valid} - {message or 'OK'}")
         
         with tempfile.TemporaryDirectory() as tmpdir:
             valid, message = validator.validate_directory(Path(tmpdir))
-            print(f"   Directory validation: {valid} - {message or 'OK'}")
-        
-        config = {
-            "app": {"name": "test"},
-            "document_processing": {
-                "chunk_size": 500,
-                "supported_formats": [".pdf", ".txt"]
-            },
-            "ai": {
-                "llm": {"model": "test"},
-                "embeddings": {"model": "test"}
-            },
-            "ui": {"theme": "dark"},
-            "storage": {"path": "/tmp"}
-        }
-        valid, issues = validator.validate_app_config(config)
-        print(f"   Config validation: {valid} - Issues: {issues}")
+            print(f"   ✓ Directory validation: {valid} - {message or 'OK'}")
         
     except Exception as e:
-        print(f"   Validation failed: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"   ✗ Validation failed: {e}")
     
-    print("6. Testing error classification:")
+    print("\n6. Testing error context manager:")
     try:
-        classifier = ErrorClassifier()
-        test_error = ConnectionError("Connection refused")
-        classification = classifier.classify_error(test_error)
-        print(f"   Error classification: {classification}")
-        print(f"   Recommended action: {classifier.get_recommended_action(test_error)}")
+        with ErrorContext("test_operation", raise_on_error=False) as ctx:
+            raise ValueError("Test error in context")
+        
+        print(f"   ✓ Error context successful")
+        print(f"   Error occurred: {ctx.error_occurred}")
+        if ctx.error_info:
+            print(f"   Error type: {ctx.error_info.get('error_type')}")
     except Exception as e:
-        print(f"   Error classification failed: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"   ✗ Error context failed: {e}")
     
-    print("=" * 50)
-    print("Exception system test complete.")
-    print("=" * 50)
+    print("\n" + "=" * 60)
+    print("Exception system test complete!")
+    print("=" * 60)
 
 
 if __name__ == "__main__":

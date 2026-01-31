@@ -1,20 +1,32 @@
 # src/document_processing/chunking.py
-
 """
-Intelligent text chunking module for DocuBot
-Implements chunking with 500 tokens and 50 token overlap
+Text chunking strategies for document processing.
 """
 
 import re
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
+import logging
 from dataclasses import dataclass
+from enum import Enum
+
+logger = logging.getLogger(__name__)
+
+
+class ChunkingStrategy(Enum):
+    """Enum for chunking strategies."""
+    RECURSIVE = "recursive"
+    SEPARATOR = "separator" 
+    SENTENCE = "sentence"
+    FIXED = "fixed"
+
 
 @dataclass
 class Chunk:
-    """Represents a text chunk"""
+    """Represents a text chunk with metadata."""
     text: str
-    start_pos: int
-    end_pos: int
+    chunk_index: int
+    start_position: int
+    end_position: int
     token_count: int
     metadata: Dict[str, Any] = None
     
@@ -22,214 +34,415 @@ class Chunk:
         if self.metadata is None:
             self.metadata = {}
 
-class IntelligentChunker:
-    """Intelligent text chunking with overlap"""
+
+class TextChunker:
+    """Main text chunking class with multiple strategies."""
     
     def __init__(self, chunk_size: int = 500, chunk_overlap: int = 50):
-        """
-        Initialize chunker
-        
-        Args:
-            chunk_size: Target tokens per chunk (default: 500)
-            chunk_overlap: Token overlap between chunks (default: 50)
-        """
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
-        self.separators = ["\n\n", "\n", ". ", "! ", "? ", "; ", ", ", " ", ""]
     
-    def chunk_text(self, text: str, metadata: Dict[str, Any] = None) -> List[Chunk]:
+    def chunk_text(
+        self, 
+        text: str, 
+        chunk_size: Optional[int] = None,
+        chunk_overlap: Optional[int] = None,
+        separator: str = "\n\n"
+    ) -> List[Dict[str, Any]]:
         """
-        Split text into intelligent chunks with overlap
+        Split text into chunks with overlap.
         
         Args:
             text: Input text to chunk
-            metadata: Optional metadata to attach to chunks
+            chunk_size: Size of each chunk in tokens (default: self.chunk_size)
+            chunk_overlap: Overlap between chunks in tokens (default: self.chunk_overlap)
+            separator: Text separator to preserve boundaries
             
         Returns:
-            List of Chunk objects
+            List of chunk dictionaries
         """
-        if not text or not text.strip():
-            return []
+        if chunk_size is None:
+            chunk_size = self.chunk_size
+        if chunk_overlap is None:
+            chunk_overlap = self.chunk_overlap
         
-        # Clean text
-        cleaned_text = text.strip()
+        if chunk_overlap >= chunk_size:
+            raise ValueError("chunk_overlap must be less than chunk_size")
         
-        # Estimate tokens (rough approximation: 1 token ≈ 4 chars for English)
-        estimated_tokens = self._estimate_tokens(cleaned_text)
+        # Simple token estimation (words)
+        words = text.split()
+        total_tokens = len(words)
         
-        # If text is smaller than chunk size, return as single chunk
-        if estimated_tokens <= self.chunk_size:
-            return [Chunk(
-                text=cleaned_text,
-                start_pos=0,
-                end_pos=len(cleaned_text),
-                token_count=estimated_tokens,
-                metadata=metadata or {}
-            )]
-        
-        # Split by paragraphs first (most natural boundary)
-        paragraphs = cleaned_text.split('\n\n')
+        if total_tokens <= chunk_size:
+            return [{
+                'text': text,
+                'token_count': total_tokens,
+                'chunk_index': 0,
+                'is_last': True
+            }]
         
         chunks = []
-        current_chunk = []
-        current_tokens = 0
+        start_idx = 0
         
-        for paragraph in paragraphs:
-            if not paragraph.strip():
-                continue
-                
-            para_tokens = self._estimate_tokens(paragraph)
+        while start_idx < total_tokens:
+            end_idx = min(start_idx + chunk_size, total_tokens)
             
-            # If paragraph itself is larger than chunk size, split further
-            if para_tokens > self.chunk_size:
-                # Split by sentences
-                sentences = self._split_sentences(paragraph)
-                for sentence in sentences:
-                    sent_tokens = self._estimate_tokens(sentence)
-                    if current_tokens + sent_tokens > self.chunk_size and current_chunk:
-                        # Save current chunk
-                        chunk_text = ' '.join(current_chunk)
-                        chunks.append(Chunk(
-                            text=chunk_text,
-                            start_pos=self._find_position(cleaned_text, chunk_text, chunks),
-                            end_pos=self._find_position(cleaned_text, chunk_text, chunks) + len(chunk_text),
-                            token_count=current_tokens,
-                            metadata=metadata or {}
-                        ))
-                        
-                        # Start new chunk with overlap
-                        overlap_text = ' '.join(current_chunk[-2:]) if len(current_chunk) > 1 else current_chunk[-1]
-                        current_chunk = [overlap_text, sentence] if overlap_text != sentence else [sentence]
-                        current_tokens = self._estimate_tokens(overlap_text) + sent_tokens
-                    else:
-                        current_chunk.append(sentence)
-                        current_tokens += sent_tokens
-            else:
-                # Add paragraph to current chunk
-                if current_tokens + para_tokens > self.chunk_size and current_chunk:
-                    # Save current chunk
-                    chunk_text = ' '.join(current_chunk)
-                    chunks.append(Chunk(
-                        text=chunk_text,
-                        start_pos=self._find_position(cleaned_text, chunk_text, chunks),
-                        end_pos=self._find_position(cleaned_text, chunk_text, chunks) + len(chunk_text),
-                        token_count=current_tokens,
-                        metadata=metadata or {}
-                    ))
-                    
-                    # Start new chunk with overlap
-                    overlap_text = ' '.join(current_chunk[-1:])
-                    current_chunk = [overlap_text, paragraph] if overlap_text != paragraph else [paragraph]
-                    current_tokens = self._estimate_tokens(overlap_text) + para_tokens
-                else:
-                    current_chunk.append(paragraph)
-                    current_tokens += para_tokens
-        
-        # Add final chunk
-        if current_chunk:
-            chunk_text = ' '.join(current_chunk)
-            chunks.append(Chunk(
-                text=chunk_text,
-                start_pos=self._find_position(cleaned_text, chunk_text, chunks),
-                end_pos=self._find_position(cleaned_text, chunk_text, chunks) + len(chunk_text),
-                token_count=current_tokens,
-                metadata=metadata or {}
-            ))
+            # Get chunk text
+            chunk_words = words[start_idx:end_idx]
+            chunk_text = ' '.join(chunk_words)
+            
+            # Clean up whitespace
+            chunk_text = re.sub(r'\s+', ' ', chunk_text).strip()
+            
+            if chunk_text:  # Only add non-empty chunks
+                chunks.append({
+                    'text': chunk_text,
+                    'token_count': len(chunk_words),
+                    'chunk_index': len(chunks),
+                    'is_last': end_idx >= total_tokens,
+                    'start_token': start_idx,
+                    'end_token': end_idx
+                })
+            
+            # Move start index, accounting for overlap
+            if end_idx >= total_tokens:
+                break
+            start_idx = end_idx - chunk_overlap
         
         return chunks
     
-    def _estimate_tokens(self, text: str) -> int:
-        """Estimate token count (approximate)"""
-        # Simple estimation: 1 token ≈ 4 characters for English
-        # More accurate would require actual tokenizer
-        words = len(text.split())
-        chars = len(text)
-        return max(words, chars // 4)
-    
-    def _split_sentences(self, text: str) -> List[str]:
-        """Split text into sentences"""
-        # Simple sentence splitting
-        sentences = re.split(r'(?<=[.!?])\s+', text)
-        return [s.strip() for s in sentences if s.strip()]
-    
-    def _find_position(self, source_text: str, chunk_text: str, existing_chunks: List[Chunk]) -> int:
-        """Find starting position of chunk in source text"""
-        # Try to find exact match
-        position = source_text.find(chunk_text)
-        
-        # If not found, estimate based on previous chunks
-        if position == -1 and existing_chunks:
-            last_chunk = existing_chunks[-1]
-            return last_chunk.end_pos + 1  # Just after previous chunk
-        
-        # If not found and no previous chunks, return 0
-        if position == -1:
-            return 0
-            
-        return position 
-    
-    def chunk_by_tokens(self, text: str, metadata: Dict[str, Any] = None) -> List[Chunk]:
+    def chunk_by_separator(
+        self, 
+        text: str, 
+        separator: str = "\n\n",
+        max_chunk_size: int = 500
+    ) -> List[Dict[str, Any]]:
         """
-        Alternative: Simple token-based chunking with overlap
+        Chunk text by natural separators (paragraphs, sentences).
         
         Args:
             text: Input text
-            metadata: Optional metadata
+            separator: Separator to split on
+            max_chunk_size: Maximum chunk size in tokens
             
         Returns:
-            List of chunks
+            List of chunk dictionaries
         """
-        words = text.split()
-        chunks = []
-        start = 0
+        if not text.strip():
+            return []
         
-        while start < len(words):
-            # Calculate end position with overlap
-            end = min(start + self.chunk_size, len(words))
+        # Split by separator
+        segments = [seg.strip() for seg in text.split(separator) if seg.strip()]
+        
+        chunks = []
+        current_chunk = []
+        current_size = 0
+        
+        for segment in segments:
+            segment_tokens = len(segment.split())
             
-            # Adjust to not cut words in middle (simple approach)
-            chunk_words = words[start:end]
-            chunk_text = ' '.join(chunk_words)
+            # If segment itself is too large, split it
+            if segment_tokens > max_chunk_size:
+                if current_chunk:
+                    chunks.append(self._create_chunk_from_segments(current_chunk, len(chunks)))
+                    current_chunk = []
+                    current_size = 0
+                
+                # Split the large segment
+                sub_chunks = self.chunk_text(segment, max_chunk_size, 0)
+                chunks.extend(sub_chunks)
+                continue
             
-            chunks.append(Chunk(
-                text=chunk_text,
-                start_pos=self._find_position(text, chunk_text, chunks),
-                end_pos=self._find_position(text, chunk_text, chunks) + len(chunk_text),
-                token_count=len(chunk_words),
-                metadata=metadata or {}
-            ))
+            # Add segment to current chunk if it fits
+            if current_size + segment_tokens <= max_chunk_size:
+                current_chunk.append(segment)
+                current_size += segment_tokens
+            else:
+                # Save current chunk and start new one
+                if current_chunk:
+                    chunks.append(self._create_chunk_from_segments(current_chunk, len(chunks)))
+                
+                current_chunk = [segment]
+                current_size = segment_tokens
+        
+        # Add last chunk if any
+        if current_chunk:
+            chunks.append(self._create_chunk_from_segments(current_chunk, len(chunks)))
+        
+        return chunks
+    
+    def _create_chunk_from_segments(self, segments: List[str], index: int) -> Dict[str, Any]:
+        """Helper to create chunk from segments."""
+        text = "\n\n".join(segments)
+        return {
+            'text': text,
+            'token_count': len(text.split()),
+            'chunk_index': index,
+            'segment_count': len(segments)
+        }
+    
+    def chunk_by_sentences(
+        self, 
+        text: str, 
+        sentences_per_chunk: int = 10,
+        max_chunk_size: int = 500
+    ) -> List[Dict[str, Any]]:
+        """
+        Chunk text by sentences.
+        
+        Args:
+            text: Input text
+            sentences_per_chunk: Target sentences per chunk
+            max_chunk_size: Maximum chunk size in tokens
             
-            # Move start with overlap
-            start = end - min(self.chunk_overlap, end - start)
+        Returns:
+            List of chunk dictionaries
+        """
+        # Simple sentence splitting (improve with nltk if available)
+        sentences = re.split(r'[.!?]+', text)
+        sentences = [s.strip() for s in sentences if s.strip()]
+        
+        chunks = []
+        current_chunk = []
+        current_sentences = 0
+        
+        for sentence in sentences:
+            sentence_tokens = len(sentence.split())
+            
+            if sentence_tokens > max_chunk_size:
+                # Sentence is too large, split it
+                if current_chunk:
+                    chunks.append(self._create_chunk_from_segments(current_chunk, len(chunks)))
+                    current_chunk = []
+                    current_sentences = 0
+                
+                sub_chunks = self.chunk_text(sentence, max_chunk_size, 0)
+                chunks.extend(sub_chunks)
+                continue
+            
+            if current_sentences < sentences_per_chunk and (
+                sum(len(s.split()) for s in current_chunk) + sentence_tokens <= max_chunk_size
+            ):
+                current_chunk.append(sentence)
+                current_sentences += 1
+            else:
+                if current_chunk:
+                    chunks.append(self._create_chunk_from_segments(current_chunk, len(chunks)))
+                
+                current_chunk = [sentence]
+                current_sentences = 1
+        
+        if current_chunk:
+            chunks.append(self._create_chunk_from_segments(current_chunk, len(chunks)))
         
         return chunks
 
-# Factory function for easy use
-def create_chunker(chunk_size: int = 500, chunk_overlap: int = 50) -> IntelligentChunker:
-    """Create and return a chunker instance"""
-    return IntelligentChunker(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
 
-# Test the chunker
-if __name__ == "__main__":
-    # Test with sample text
-    sample_text = """
-    This is a test document. It contains multiple paragraphs.
+# Factory function for creating chunkers
+def create_chunker(
+    strategy: ChunkingStrategy = ChunkingStrategy.RECURSIVE,
+    chunk_size: int = 500,
+    chunk_overlap: int = 50,
+    separator: str = "\n\n"
+) -> TextChunker:
+    """
+    Factory function to create chunker with specific strategy.
     
-    Each paragraph should be chunked intelligently.
-    The chunking should respect natural boundaries like paragraphs and sentences.
+    Args:
+        strategy: Chunking strategy
+        chunk_size: Size of each chunk
+        chunk_overlap: Overlap between chunks
+        separator: Separator for boundary preservation
+        
+    Returns:
+        Configured TextChunker instance
+    """
+    chunker = TextChunker(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    return chunker
+
+
+def chunk_text(
+    text: str, 
+    chunk_size: int = 500, 
+    chunk_overlap: int = 50,
+    separator: str = "\n\n",
+    strategy: Union[str, ChunkingStrategy] = "recursive"
+) -> List[Dict[str, Any]]:
+    """
+    Main function to chunk text (exported for import).
     
-    The goal is to create chunks of approximately 500 tokens each,
-    with 50 tokens of overlap between consecutive chunks.
+    Args:
+        text: Text to chunk
+        chunk_size: Size of each chunk
+        chunk_overlap: Overlap between chunks
+        separator: Separator for boundary preservation
+        strategy: Chunking strategy ('recursive', 'separator', 'sentence')
+        
+    Returns:
+        List of chunk dictionaries
+    """
+    # Convert string to enum if needed
+    if isinstance(strategy, str):
+        try:
+            strategy = ChunkingStrategy(strategy.lower())
+        except ValueError:
+            strategy = ChunkingStrategy.RECURSIVE
     
-    This ensures that context is preserved across chunks
-    and the RAG system can retrieve relevant information effectively.
+    chunker = TextChunker(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    
+    if strategy == ChunkingStrategy.SEPARATOR:
+        return chunker.chunk_by_separator(text, separator, chunk_size)
+    elif strategy == ChunkingStrategy.SENTENCE:
+        return chunker.chunk_by_sentences(text, max_chunk_size=chunk_size)
+    else:  # recursive (default)
+        return chunker.chunk_text(text, chunk_size, chunk_overlap, separator)
+
+class FixedSizeChunker(TextChunker):
+    """
+    Fixed-size chunker that splits text into equal-sized chunks.
     """
     
-    chunker = IntelligentChunker(chunk_size=500, chunk_overlap=50)
-    chunks = chunker.chunk_text(sample_text, {"source": "test_doc"})
+    def __init__(self, chunk_size: int = 500, chunk_overlap: int = 0):
+        super().__init__(chunk_size, chunk_overlap)
     
-    print(f"Created {len(chunks)} chunks:")
-    for i, chunk in enumerate(chunks):
-        print(f"\nChunk {i+1}:")
-        print(f"  Tokens: {chunk.token_count}")
-        print(f"  Text preview: {chunk.text[:100]}...")
+    def chunk_text(
+        self,
+        text: str,
+        chunk_size: Optional[int] = None,
+        chunk_overlap: Optional[int] = None,
+        separator: str = "\n\n"
+    ) -> List[Dict[str, Any]]:
+        """
+        Fixed-size chunking with minimal overlap.
+        """
+        if chunk_size is None:
+            chunk_size = self.chunk_size
+        if chunk_overlap is None:
+            chunk_overlap = self.chunk_overlap
+        
+        # Simple fixed-size splitting
+        words = text.split()
+        chunks = []
+        
+        step = chunk_size - chunk_overlap
+        if step <= 0:
+            step = chunk_size  # Fallback if overlap too large
+        
+        for i in range(0, len(words), step):
+            chunk_words = words[i:i + chunk_size]
+            if chunk_words:  # Only add non-empty chunks
+                chunk_text = ' '.join(chunk_words)
+                chunks.append({
+                    'text': chunk_text,
+                    'token_count': len(chunk_words),
+                    'chunk_index': len(chunks),
+                    'is_last': i + chunk_size >= len(words)
+                })
+        
+        return chunks
+
+class SemanticChunker(TextChunker):
+    """
+    Semantic chunker that splits text based on semantic boundaries.
+    Uses embeddings to find natural break points.
+    """
+    
+    def __init__(self, chunk_size: int = 500, chunk_overlap: int = 50):
+        super().__init__(chunk_size, chunk_overlap)
+        self.embedding_model = None
+    
+    def chunk_text(
+        self,
+        text: str,
+        chunk_size: Optional[int] = None,
+        chunk_overlap: Optional[int] = None,
+        separator: str = "\n\n"
+    ) -> List[Dict[str, Any]]:
+        """
+        Semantic chunking using embeddings (simplified version).
+        Falls back to recursive chunking if embeddings not available.
+        """
+        try:
+            # Try to use semantic chunking if sentence-transformers available
+            from sentence_transformers import SentenceTransformer
+            import numpy as np
+            
+            if self.embedding_model is None:
+                self.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+            
+            # Simple implementation: chunk by paragraphs with semantic scoring
+            paragraphs = [p.strip() for p in text.split('\n\n') if p.strip()]
+            
+            if len(paragraphs) <= 1:
+                return super().chunk_text(text, chunk_size, chunk_overlap, separator)
+            
+            # Get embeddings for paragraphs
+            embeddings = self.embedding_model.encode(paragraphs)
+            
+            # Calculate similarities between consecutive paragraphs
+            similarities = []
+            for i in range(len(embeddings) - 1):
+                sim = np.dot(embeddings[i], embeddings[i + 1]) / (
+                    np.linalg.norm(embeddings[i]) * np.linalg.norm(embeddings[i + 1])
+                )
+                similarities.append(sim)
+            
+            # Find low similarity points (natural breaks)
+            chunks = []
+            current_chunk = []
+            
+            for i, para in enumerate(paragraphs):
+                current_chunk.append(para)
+                
+                # Check if this is a break point
+                if i < len(similarities) and similarities[i] < 0.5:
+                    if current_chunk:
+                        chunk_text = "\n\n".join(current_chunk)
+                        if len(chunk_text.split()) > (chunk_size or self.chunk_size):
+                            # If too large, split recursively
+                            sub_chunks = super().chunk_text(
+                                chunk_text, chunk_size, chunk_overlap, separator
+                            )
+                            chunks.extend(sub_chunks)
+                        else:
+                            chunks.append({
+                                'text': chunk_text,
+                                'token_count': len(chunk_text.split()),
+                                'chunk_index': len(chunks),
+                                'is_last': False,
+                                'semantic_boundary': True
+                            })
+                        current_chunk = []
+            
+            # Add last chunk
+            if current_chunk:
+                chunk_text = "\n\n".join(current_chunk)
+                chunks.append({
+                    'text': chunk_text,
+                    'token_count': len(chunk_text.split()),
+                    'chunk_index': len(chunks),
+                    'is_last': True,
+                    'semantic_boundary': False
+                })
+            
+            # Update is_last flag
+            if chunks:
+                chunks[-1]['is_last'] = True
+            
+            return chunks
+            
+        except ImportError:
+            # Fall back to regular chunking if sentence-transformers not available
+            logger.warning("sentence-transformers not available, using recursive chunking")
+            return super().chunk_text(text, chunk_size, chunk_overlap, separator)
+
+
+# Update __all__ to include SemanticChunker
+__all__ = [
+    'chunk_text', 
+    'TextChunker', 
+    'Chunk', 
+    'ChunkingStrategy', 
+    'create_chunker',
+    'SemanticChunker'
+]

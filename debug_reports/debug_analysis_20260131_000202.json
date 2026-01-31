@@ -1,0 +1,426 @@
+{
+  "timestamp": "2026-01-31T00:02:02.529019",
+  "project_dir": "C:\\Users\\aarka\\Github\\project portofolio\\junior project\\DocuBot v.1\\DocuBot",
+  "total_issues": 8,
+  "structure_analysis": {
+    "total_expected": 32,
+    "found": 31,
+    "missing": 1,
+    "found_items": [
+      "src/",
+      "src/core/",
+      "src/core/__init__.py",
+      "src/core/app.py",
+      "src/core/config.py",
+      "src/core/exceptions.py",
+      "src/document_processing/",
+      "src/document_processing/__init__.py",
+      "src/document_processing/extractors/",
+      "src/document_processing/extractors/__init__.py",
+      "src/document_processing/extractors/base_extractor.py",
+      "src/document_processing/extractors/pdf_extractor.py",
+      "src/document_processing/extractors/txt_extractor.py",
+      "src/document_processing/extractors/docx_extractor.py",
+      "src/ai_engine/",
+      "src/ai_engine/__init__.py",
+      "src/ai_engine/llm_client.py",
+      "src/vector_store/",
+      "src/vector_store/__init__.py",
+      "src/vector_store/chroma_client.py",
+      "src/database/",
+      "src/database/sqlite_client.py",
+      "src/ui/",
+      "src/ui/desktop/",
+      "src/ui/desktop/__init__.py",
+      "src/ui/desktop/main_window.py",
+      "data/",
+      "data/config/",
+      "data/config/app_config.yaml",
+      "app.py",
+      "requirements.txt"
+    ],
+    "missing_items": [
+      "src/database/__init__.py"
+    ],
+    "completion_percentage": 96.875
+  },
+  "import_analysis": {
+    "total_import_errors": 5,
+    "resolved": 0,
+    "unresolved": 5,
+    "unresolved_details": [
+      {
+        "module": "src.document_processing.extractors.pdf_extractor",
+        "error": "No module named 'src.document_processing.pdf_extractor'",
+        "actual_file": "src/document_processing/extractors/pdf_extractor.py",
+        "import_statement": "from src.document_processing.extractors.pdf_extractor import PDFExtractor"
+      },
+      {
+        "module": "src.document_processing.extractors.txt_extractor",
+        "error": "No module named 'src.document_processing.txt_extractor'",
+        "actual_file": "src/document_processing/extractors/txt_extractor.py",
+        "import_statement": "from src.document_processing.extractors.txt_extractor import TXTExtractor"
+      },
+      {
+        "module": "src.document_processing.extractors.docx_extractor",
+        "error": "No module named 'src.document_processing.docx_extractor'",
+        "actual_file": "src/document_processing/extractors/docx_extractor.py",
+        "import_statement": "from src.document_processing.extractors.docx_extractor import DOCXExtractor"
+      },
+      {
+        "module": "src.document_processing.extractors.base_extractor",
+        "error": "No module named 'src.document_processing.extractors.extractors'",
+        "actual_file": "src/document_processing/extractors/base_extractor.py",
+        "import_statement": "from src.document_processing.extractors.base_extractor import BaseExtractor"
+      },
+      {
+        "module": "src.document_processing.extractors",
+        "error": "cannot import name 'create_extractor' from 'src.document_processing.extractors'",
+        "actual_file": "src/document_processing/extractors/__init__.py",
+        "import_statement": "from src.document_processing.extractors import create_extractor"
+      }
+    ]
+  },
+  "dependency_analysis": {
+    "requirements_exists": true,
+    "total_packages": 78
+  },
+  "module_analysis": {
+    "src.document_processing.extractors.pdf_extractor": {
+      "name": "src.document_processing.extractors.pdf_extractor",
+      "exists": true,
+      "file_path": "C:\\Users\\aarka\\Github\\project portofolio\\junior project\\DocuBot v.1\\DocuBot\\src\\document_processing\\extractors\\pdf_extractor.py",
+      "file_size": 27361,
+      "has_content": true,
+      "can_import": false,
+      "import_error": "name 'Union' is not defined",
+      "classes_found": [],
+      "functions_found": [],
+      "dependencies": [],
+      "issues": []
+    },
+    "src.document_processing.extractors.txt_extractor": {
+      "name": "src.document_processing.extractors.txt_extractor",
+      "exists": true,
+      "file_path": "C:\\Users\\aarka\\Github\\project portofolio\\junior project\\DocuBot v.1\\DocuBot\\src\\document_processing\\extractors\\txt_extractor.py",
+      "file_size": 6938,
+      "has_content": true,
+      "can_import": true,
+      "import_error": "",
+      "classes_found": [
+        "Path",
+        "TXTExtractor",
+        "TextExtractor"
+      ],
+      "functions_found": [],
+      "dependencies": [],
+      "issues": []
+    },
+    "src.document_processing.extractors.docx_extractor": {
+      "name": "src.document_processing.extractors.docx_extractor",
+      "exists": true,
+      "file_path": "C:\\Users\\aarka\\Github\\project portofolio\\junior project\\DocuBot v.1\\DocuBot\\src\\document_processing\\extractors\\docx_extractor.py",
+      "file_size": 37567,
+      "has_content": true,
+      "can_import": true,
+      "import_error": "",
+      "classes_found": [
+        "BaseExtractor",
+        "BinaryIO",
+        "DOCXExtractor",
+        "DocxDocument",
+        "DocxExtractionResult",
+        "DocxExtractorAdapter",
+        "Inches",
+        "Paragraph",
+        "ParagraphData",
+        "Path",
+        "Pt",
+        "RGBColor",
+        "Table",
+        "WD_ALIGN_PARAGRAPH",
+        "_Cell",
+        "_Row",
+        "datetime"
+      ],
+      "functions_found": [
+        "Document",
+        "asdict",
+        "create_docx_extractor",
+        "dataclass",
+        "extract_docx_metadata",
+        "extract_docx_text",
+        "field",
+        "is_valid_docx",
+        "parse_xml",
+        "qn",
+        "test_docx_extractor"
+      ],
+      "dependencies": [],
+      "issues": []
+    },
+    "src.document_processing.extractors.base_extractor": {
+      "name": "src.document_processing.extractors.base_extractor",
+      "exists": true,
+      "file_path": "C:\\Users\\aarka\\Github\\project portofolio\\junior project\\DocuBot v.1\\DocuBot\\src\\document_processing\\extractors\\base_extractor.py",
+      "file_size": 2998,
+      "has_content": true,
+      "can_import": true,
+      "import_error": "",
+      "classes_found": [
+        "ABC",
+        "BaseExtractor",
+        "Path",
+        "TextExtractor"
+      ],
+      "functions_found": [
+        "abstractmethod"
+      ],
+      "dependencies": [],
+      "issues": []
+    },
+    "src.document_processing.extractors": {
+      "name": "src.document_processing.extractors",
+      "exists": false,
+      "file_path": "",
+      "file_size": 0,
+      "has_content": false,
+      "can_import": false,
+      "import_error": "",
+      "classes_found": [],
+      "functions_found": [],
+      "dependencies": [],
+      "issues": [
+        {
+          "type": "error",
+          "module": "src.document_processing.extractors",
+          "message": "File does not exist: src/document_processing/extractors.py",
+          "details": {
+            "expected_path": "C:\\Users\\aarka\\Github\\project portofolio\\junior project\\DocuBot v.1\\DocuBot\\src\\document_processing\\extractors.py"
+          },
+          "fix_suggestion": "Create missing file: src/document_processing/extractors.py",
+          "priority": 1,
+          "timestamp": "2026-01-31T00:01:51.136836"
+        }
+      ]
+    },
+    "src.core.app": {
+      "name": "src.core.app",
+      "exists": true,
+      "file_path": "C:\\Users\\aarka\\Github\\project portofolio\\junior project\\DocuBot v.1\\DocuBot\\src\\core\\app.py",
+      "file_size": 8678,
+      "has_content": true,
+      "can_import": true,
+      "import_error": "",
+      "classes_found": [
+        "ChromaClient",
+        "ConfigManager",
+        "ConversationMemory",
+        "DocuBotCore",
+        "HybridSearchEngine",
+        "LLMClient",
+        "Path",
+        "QueryResult",
+        "RAGEngine",
+        "SQLiteClient",
+        "SentenceTransformer",
+        "datetime"
+      ],
+      "functions_found": [
+        "dataclass",
+        "get_config"
+      ],
+      "dependencies": [],
+      "issues": []
+    },
+    "src.ui.desktop.main_window": {
+      "name": "src.ui.desktop.main_window",
+      "exists": true,
+      "file_path": "C:\\Users\\aarka\\Github\\project portofolio\\junior project\\DocuBot v.1\\DocuBot\\src\\ui\\desktop\\main_window.py",
+      "file_size": 57855,
+      "has_content": true,
+      "can_import": true,
+      "import_error": "",
+      "classes_found": [
+        "AppConfig",
+        "DatabaseClient",
+        "DocuBotCore",
+        "DocumentProcessor",
+        "LLMClient",
+        "MainWindow",
+        "Path",
+        "datetime"
+      ],
+      "functions_found": [
+        "get_logger",
+        "run_application"
+      ],
+      "dependencies": [],
+      "issues": []
+    }
+  },
+  "app_analysis": {
+    "exists": true,
+    "size": 32344,
+    "has_main": true,
+    "has_gui": true,
+    "has_config": true,
+    "has_error_handling": true,
+    "issues": []
+  },
+  "repair_plan": {
+    "total_steps": 3,
+    "high_priority_steps": 2,
+    "repair_steps": [
+      {
+        "step": 1,
+        "priority": "HIGH",
+        "action": "Create missing extractor files",
+        "details": "Create 7 missing extractor files",
+        "commands": [
+          "Create: src/document_processing/extractors/pdf_extractor.py",
+          "Create: src/document_processing/extractors/txt_extractor.py",
+          "Create: src/document_processing/extractors/docx_extractor.py",
+          "Create: src/document_processing/extractors/base_extractor.py",
+          "Fix: src/document_processing/extractors/__init__.py"
+        ],
+        "estimated_time": "30 minutes"
+      },
+      {
+        "step": 2,
+        "priority": "HIGH",
+        "action": "Fix __init__.py files",
+        "details": "Ensure proper exports in __init__.py files",
+        "commands": [
+          "Edit src/document_processing/extractors/__init__.py to export extractor classes",
+          "Add __all__ = ['PDFExtractor', 'TXTExtractor', 'DOCXExtractor', 'BaseExtractor', 'create_extractor']"
+        ],
+        "estimated_time": "10 minutes"
+      },
+      {
+        "step": 5,
+        "priority": "MEDIUM",
+        "action": "Test the application",
+        "details": "Run app.py to verify fixes",
+        "commands": [
+          "python app.py --cli (for CLI mode)",
+          "python app.py --gui (for GUI mode)",
+          "Check for any remaining errors"
+        ],
+        "estimated_time": "5 minutes"
+      }
+    ]
+  },
+  "issues": [
+    {
+      "type": "warning",
+      "module": "src/database/__init__.py",
+      "message": "Missing file: src/database/__init__.py",
+      "details": {
+        "item_type": "file",
+        "expected": true,
+        "severity": "WARNING"
+      },
+      "fix_suggestion": "Create file: src/database/__init__.py",
+      "priority": 2,
+      "timestamp": "2026-01-31T00:01:50.308383"
+    },
+    {
+      "type": "error",
+      "module": "src.document_processing.extractors.pdf_extractor",
+      "message": "Import exists but fails: No module named 'src.document_processing.pdf_extractor'",
+      "details": {
+        "module": "src.document_processing.extractors.pdf_extractor",
+        "error": "No module named 'src.document_processing.pdf_extractor'",
+        "actual_file": "src/document_processing/extractors/pdf_extractor.py",
+        "import_statement": "from src.document_processing.extractors.pdf_extractor import PDFExtractor"
+      },
+      "fix_suggestion": "Check src/document_processing/extractors/pdf_extractor.py and __init__.py for import issues",
+      "priority": 1,
+      "timestamp": "2026-01-31T00:01:50.311383"
+    },
+    {
+      "type": "error",
+      "module": "src.document_processing.extractors.txt_extractor",
+      "message": "Import exists but fails: No module named 'src.document_processing.txt_extractor'",
+      "details": {
+        "module": "src.document_processing.extractors.txt_extractor",
+        "error": "No module named 'src.document_processing.txt_extractor'",
+        "actual_file": "src/document_processing/extractors/txt_extractor.py",
+        "import_statement": "from src.document_processing.extractors.txt_extractor import TXTExtractor"
+      },
+      "fix_suggestion": "Check src/document_processing/extractors/txt_extractor.py and __init__.py for import issues",
+      "priority": 1,
+      "timestamp": "2026-01-31T00:01:50.311383"
+    },
+    {
+      "type": "error",
+      "module": "src.document_processing.extractors.docx_extractor",
+      "message": "Import exists but fails: No module named 'src.document_processing.docx_extractor'",
+      "details": {
+        "module": "src.document_processing.extractors.docx_extractor",
+        "error": "No module named 'src.document_processing.docx_extractor'",
+        "actual_file": "src/document_processing/extractors/docx_extractor.py",
+        "import_statement": "from src.document_processing.extractors.docx_extractor import DOCXExtractor"
+      },
+      "fix_suggestion": "Check src/document_processing/extractors/docx_extractor.py and __init__.py for import issues",
+      "priority": 1,
+      "timestamp": "2026-01-31T00:01:50.312384"
+    },
+    {
+      "type": "error",
+      "module": "src.document_processing.extractors.base_extractor",
+      "message": "Import exists but fails: No module named 'src.document_processing.extractors.extractors'",
+      "details": {
+        "module": "src.document_processing.extractors.base_extractor",
+        "error": "No module named 'src.document_processing.extractors.extractors'",
+        "actual_file": "src/document_processing/extractors/base_extractor.py",
+        "import_statement": "from src.document_processing.extractors.base_extractor import BaseExtractor"
+      },
+      "fix_suggestion": "Check src/document_processing/extractors/base_extractor.py and __init__.py for import issues",
+      "priority": 1,
+      "timestamp": "2026-01-31T00:01:50.312384"
+    },
+    {
+      "type": "error",
+      "module": "src.document_processing.extractors",
+      "message": "Import exists but fails: cannot import name 'create_extractor' from 'src.document_processing.extractors'",
+      "details": {
+        "module": "src.document_processing.extractors",
+        "error": "cannot import name 'create_extractor' from 'src.document_processing.extractors'",
+        "actual_file": "src/document_processing/extractors/__init__.py",
+        "import_statement": "from src.document_processing.extractors import create_extractor"
+      },
+      "fix_suggestion": "Check src/document_processing/extractors/__init__.py and __init__.py for import issues",
+      "priority": 1,
+      "timestamp": "2026-01-31T00:01:50.312384"
+    },
+    {
+      "type": "error",
+      "module": "src/document_processing/extractors/__init__.py",
+      "message": "Missing exports in __init__.py: ['TXTExtractor', 'create_extractor']",
+      "details": {
+        "file": "C:\\Users\\aarka\\Github\\project portofolio\\junior project\\DocuBot v.1\\DocuBot\\src\\document_processing\\extractors\\__init__.py",
+        "missing_exports": [
+          "TXTExtractor",
+          "create_extractor"
+        ],
+        "content_preview": "# docubot/src/document_processing/extractors/__init__.py\n\n\"\"\"\nDocument Processing Module - DocuBot\n\nMain entry point for document processing functionality.\nOnly completed and verified components are i"
+      },
+      "fix_suggestion": "Add missing exports to src/document_processing/extractors/__init__.py",
+      "priority": 1,
+      "timestamp": "2026-01-31T00:01:50.314385"
+    },
+    {
+      "type": "error",
+      "module": "src.document_processing.extractors",
+      "message": "File does not exist: src/document_processing/extractors.py",
+      "details": {
+        "expected_path": "C:\\Users\\aarka\\Github\\project portofolio\\junior project\\DocuBot v.1\\DocuBot\\src\\document_processing\\extractors.py"
+      },
+      "fix_suggestion": "Create missing file: src/document_processing/extractors.py",
+      "priority": 1,
+      "timestamp": "2026-01-31T00:01:51.136836"
+    }
+  ]
+}
